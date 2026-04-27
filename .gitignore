@@ -1,0 +1,61 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Django runtime files
+*.log
+db.sqlite3
+db.sqlite3-journal
+media/*
+!media/.gitkeep
+!media/disease_scans/.gitkeep
+!media/products/.gitkeep
+!media/soil_scans/.gitkeep
+banglaspeech2text/
+staticfiles/
+
+# Test and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Celery runtime files
+celerybeat-schedule
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ML Models
+# ml_models/
+# ml_models/disease_detection/*.txt
+# ml_models/disease_detection/*.h5
+# ml_models/soil_classification/*.h5
+
+# Node modules (if added later)
+node_modules/
+
