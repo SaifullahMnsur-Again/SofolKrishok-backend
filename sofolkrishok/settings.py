@@ -126,11 +126,18 @@ USE_TZ = True
 STATIC_URL = '/api/static/'
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
 STORAGES = {
-    'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
+
+# STORAGES = {
+#     'staticfiles': {
+#         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+#     },
+# }
 
 # Media files
 # MEDIA_URL = 'media/'
