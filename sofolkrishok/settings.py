@@ -19,7 +19,8 @@ def comma_separated_list(raw_value: str) -> list[str]:
 env = environ.Env(
     DEBUG=(bool, True),
 )
-environ.Env.read_env(os.path.join(PROJECT_ROOT, '.env'))
+# environ.Env.read_env(os.path.join(PROJECT_ROOT, '.env'))
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 SECRET_KEY = env.str('SECRET_KEY', default='django-insecure-change-me-in-production')
 DEBUG = env.bool('DEBUG', default=True)
