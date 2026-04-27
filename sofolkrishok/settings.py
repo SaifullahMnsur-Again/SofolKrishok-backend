@@ -24,6 +24,7 @@ environ.Env.read_env(os.path.join(PROJECT_ROOT, '.env'))
 SECRET_KEY = env.str('SECRET_KEY', default='django-insecure-change-me-in-production')
 DEBUG = env.bool('DEBUG', default=True)
 ALLOWED_HOSTS = comma_separated_list(env.str('ALLOWED_HOSTS', default='localhost,127.0.0.1'))
+FORCE_SCRIPT_NAME = env.str('FORCE_SCRIPT_NAME', default=None)
 
 # Application definition
 INSTALLED_APPS = [
@@ -121,7 +122,8 @@ USE_I18N = True
 USE_TZ = True
 
 # Static files
-STATIC_URL = 'static/'
+STATIC_URL = '/api/static/'
+
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STORAGES = {
     'staticfiles': {
@@ -130,7 +132,8 @@ STORAGES = {
 }
 
 # Media files
-MEDIA_URL = 'media/'
+# MEDIA_URL = 'media/'
+MEDIA_URL = '/api/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
