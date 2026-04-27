@@ -23,16 +23,16 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     # API endpoints
-    path('api/auth/', include('users.urls')),
-    path('api/farming/', include('lms_farming.urls')),
-    path('api/ai/', include('ai_engine.urls')),
-    path('api/marketplace/', include('marketplace.urls')),
-    path('api/consultation/', include('consultation.urls')),
-    path('api/finance/', include('finance.urls')),
+    path('auth/', include('users.urls')),
+    path('farming/', include('lms_farming.urls')),
+    path('ai/', include('ai_engine.urls')),
+    path('marketplace/', include('marketplace.urls')),
+    path('consultation/', include('consultation.urls')),
+    path('finance/', include('finance.urls')),
 
     # API documentation (reduced to only necessary endpoints)
-    re_path(r'^api/schema\.json$', schema_view.without_ui(cache_timeout=0), name='api-schema-json'),
-    path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='api-schema-swagger-ui'),
+    re_path(r'^schema\.json$', schema_view.without_ui(cache_timeout=0), name='api-schema-json'),
+    path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='api-schema-swagger-ui'),
 ]
 
 if settings.DEBUG:
