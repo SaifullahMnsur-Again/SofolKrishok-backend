@@ -24,8 +24,17 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 SECRET_KEY = env.str('SECRET_KEY', default='django-insecure-change-me-in-production')
 DEBUG = env.bool('DEBUG', default=True)
-ALLOWED_HOSTS = comma_separated_list(env.str('ALLOWED_HOSTS', default='localhost,127.0.0.1'))
-FORCE_SCRIPT_NAME = env.str('FORCE_SCRIPT_NAME', default=None)
+ALLOWED_HOSTS = comma_separated_list(env.str('ALLOWED_HOSTS', default='localhost,127.0.0.1,testserver'))
+if DEBUG and 'testserver' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('testserver')
+
+# FORCE_SCRIPT_NAME: Used ONLY in production with reverse proxy
+# In development (DEBUG=True): Set to None so routes work at /, /auth/, /admin/, etc.
+# In production (DEBUG=False): Set to /api so reverse proxy can route correctly
+if DEBUG:
+    FORCE_SCRIPT_NAME = None
+else:
+    FORCE_SCRIPT_NAME = env.str('FORCE_SCRIPT_NAME', default=None)
 
 # Application definition
 INSTALLED_APPS = [
@@ -128,6 +137,12 @@ STATIC_URL = '/api/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {
+            "location": str(BASE_DIR / 'media'),
+        },
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
@@ -175,9 +190,20 @@ SIMPLE_JWT = {
 # CORS Configuration
 # ============================================
 FRONTEND_URL = env.str('FRONTEND_URL', default='http://localhost:5173')
-CORS_ALLOWED_ORIGINS = [FRONTEND_URL]
+CORS_ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+]
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = comma_separated_list(env.str('CSRF_TRUSTED_ORIGINS', default=FRONTEND_URL))
+CSRF_TRUSTED_ORIGINS = comma_separated_list(
+    env.str(
+        'CSRF_TRUSTED_ORIGINS',
+        default=f'{FRONTEND_URL},http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174',
+    )
+)
 
 # Security / proxy settings for hosted deployment
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

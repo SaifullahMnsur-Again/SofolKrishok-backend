@@ -6,8 +6,31 @@ from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework import permissions
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def api_root(request):
+    """API root endpoint showing available services."""
+    return Response({
+        'message': 'SofolKrishok API',
+        'version': 'v1',
+        'description': 'Unified API for farming, AI, marketplace, consultation, and finance',
+        'endpoints': {
+            'auth': '/auth/',
+            'farming': '/farming/',
+            'ai': '/ai/',
+            'marketplace': '/marketplace/',
+            'consultation': '/consultation/',
+            'finance': '/finance/',
+            'docs': '/docs/',
+            'admin': '/admin/',
+        },
+        'note': 'In production with reverse proxy, prepend /api to all routes (e.g., /api/auth/)'
+    })
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -20,6 +43,7 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('', api_root, name='api-root'),
     path('admin/', admin.site.urls),
 
     # API endpoints

@@ -10,10 +10,12 @@ Models are loaded once at first use and cached in memory.
 import os
 import ast
 import logging
+from pathlib import Path
 import numpy as np
 from PIL import Image
 from io import BytesIO
 from django.conf import settings
+from .models import AIModelArtifact
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,71 @@ IMG_SIZE = (224, 224)
 
 def _load_model(crop_type: str):
     """Load a disease detection model and its class indices."""
+    crop_type = (crop_type or '').strip()
+    artifact = (
+        AIModelArtifact.objects.filter(
+            operation=AIModelArtifact.Operation.DISEASE_DETECTION,
+            crop_type__iexact=crop_type,
+            is_active=True,
+        )
+        .order_by('-updated_at', '-created_at')
+        .first()
+    )
+
+    if not artifact:
+        artifact = (
+            AIModelArtifact.objects.filter(
+                operation=AIModelArtifact.Operation.DISEASE_DETECTION,
+                crop_type__iexact=crop_type,
+            )
+            .order_by('-is_active', '-updated_at', '-created_at')
+            .first()
+        )
+
+    if artifact:
+        cache_key = f"artifact:{artifact.pk}:{artifact.updated_at.timestamp()}"
+        if cache_key in _disease_models:
+            return _disease_models[cache_key], _class_indices[cache_key]
+
+        base_dir = Path(settings.BASE_DIR)
+        model_path = Path(artifact.model_path) if artifact.model_path else None
+        indices_path = Path(artifact.indices_path) if artifact.indices_path else None
+
+        if model_path is None and artifact.model_file:
+            model_path = Path(artifact.model_file.path)
+        if indices_path is None and artifact.indices_file:
+            indices_path = Path(artifact.indices_file.path)
+
+        if model_path is None or indices_path is None:
+            raise FileNotFoundError(
+                f"Active disease model '{artifact.display_name}' is missing its model or indices file."
+            )
+
+        if not model_path.is_absolute():
+            model_path = base_dir / model_path
+        if not indices_path.is_absolute():
+            indices_path = base_dir / indices_path
+
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        if not indices_path.exists():
+            raise FileNotFoundError(f"Indices file not found: {indices_path}")
+
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU
+        import tensorflow as tf
+
+        logger.info(f"Loading active disease model '{artifact.display_name}' for {artifact.crop_type} from {model_path}")
+        model = tf.keras.models.load_model(str(model_path))
+
+        with open(indices_path, 'r') as f:
+            raw = f.read().strip()
+            indices = ast.literal_eval(raw)
+
+        reversed_indices = {v: k for k, v in indices.items()}
+        _disease_models[cache_key] = model
+        _class_indices[cache_key] = reversed_indices
+        return model, reversed_indices
+
     if crop_type in _disease_models:
         return _disease_models[crop_type], _class_indices[crop_type]
 

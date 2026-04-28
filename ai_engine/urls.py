@@ -1,5 +1,10 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from . import views
+
+router = DefaultRouter()
+router.register('models', views.AIModelArtifactViewSet, basename='ai-models')
+router.register('crops', views.CropViewSet, basename='ai-crops')
 
 urlpatterns = [
     # Gemini Chat (Memory-Aware)
@@ -12,6 +17,9 @@ urlpatterns = [
     # Disease Detection
     path('disease-detect/', views.DiseaseDetectView.as_view(), name='disease-detect'),
 
+    # Active disease crops — accessible by all authenticated users (used by DiseaseDetectPage)
+    path('active-disease-crops/', views.ActiveDiseaseCropsView.as_view(), name='active-disease-crops'),
+
     # Soil Classification
     path('soil-classify/', views.SoilClassifyView.as_view(), name='soil-classify'),
 
@@ -20,4 +28,8 @@ urlpatterns = [
 
     # Weather forecast + alert generation
     path('weather-forecast/', views.WeatherForecastView.as_view(), name='weather-forecast'),
-]
+
+    # Model management (staff-only)
+    path('models/inventory/', views.AIModelInventoryView.as_view(), name='ai-model-inventory'),
+    path('settings/gemini/', views.GeminiConfigurationView.as_view(), name='gemini-config'),
+] + router.urls

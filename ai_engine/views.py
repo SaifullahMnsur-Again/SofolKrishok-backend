@@ -1,15 +1,17 @@
 import logging
 from datetime import timedelta
 from rest_framework import generics, permissions, status, viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.views import APIView
+from django.conf import settings
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from drf_yasg.utils import swagger_auto_schema
 
 from .models import ChatSession, ChatMessage, DiseaseDetectionLog, SoilClassificationLog
+from .models import AIModelArtifact, AIServiceConfiguration, Crop
 from .serializers import (
     ChatSessionSerializer,
     ChatSessionDetailSerializer,
@@ -21,13 +23,175 @@ from .serializers import (
     SoilClassificationLogSerializer,
     VoiceCommandSerializer,
     WeatherForecastSerializer,
+    AIModelArtifactSerializer,
+    AIServiceConfigurationSerializer,
+    CropSerializer,
 )
+from .permissions import IsAIModelManager
 from .gemini_service import chat_with_gemini
 from .whisper_service import transcribe_bangla_audio
 from .weather_service import get_weather_forecast
 from users.models import Notification
 
 logger = logging.getLogger(__name__)
+
+
+def _invalidate_gemini_client_cache():
+    from . import gemini_service
+
+    gemini_service._client = None
+    gemini_service._client_api_key = None
+
+
+class AIModelArtifactViewSet(viewsets.ModelViewSet):
+    serializer_class = AIModelArtifactSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        queryset = AIModelArtifact.objects.all().select_related('created_by')
+        query_params = getattr(self.request, 'query_params', {})
+        operation = query_params.get('operation')
+        crop_type = query_params.get('crop_type')
+        is_active = query_params.get('is_active')
+
+        if operation:
+            queryset = queryset.filter(operation=operation)
+        if crop_type:
+            queryset = queryset.filter(crop_type=crop_type)
+        if is_active in {'true', 'True', '1'}:
+            queryset = queryset.filter(is_active=True)
+        elif is_active in {'false', 'False', '0'}:
+            queryset = queryset.filter(is_active=False)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @swagger_auto_schema(tags=['AI Management'])
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=['AI Management'])
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=['AI Management'])
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=['AI Management'])
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    @swagger_auto_schema(tags=['AI Management'])
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        artifact = self.get_object()
+        artifact.is_active = True
+        # Do NOT use update_fields here — the custom save() must run
+        # to deactivate other models with the same operation+crop_type scope.
+        artifact.save()
+        return Response(self.get_serializer(artifact).data)
+
+
+class GeminiConfigurationView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
+
+    def get(self, request):
+        config = AIServiceConfiguration.get_solo()
+        serializer = AIServiceConfigurationSerializer(config)
+        return Response(serializer.data)
+
+    def put(self, request):
+        config = AIServiceConfiguration.get_solo()
+        serializer = AIServiceConfigurationSerializer(config, data=request.data, partial=False)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        _invalidate_gemini_client_cache()
+        return Response(serializer.data)
+
+    def patch(self, request):
+        """Partial update — update only the fields supplied (e.g. just the models, or just the key)."""
+        config = AIServiceConfiguration.get_solo()
+        serializer = AIServiceConfigurationSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        _invalidate_gemini_client_cache()
+        return Response(serializer.data)
+
+
+
+class AIModelInventoryView(APIView):
+    """Return the manually managed model registry for the Model Hub UI."""
+    permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
+
+    def get(self, request):
+        disease_queryset = (
+            AIModelArtifact.objects.filter(operation=AIModelArtifact.Operation.DISEASE_DETECTION)
+            .order_by('crop_type', '-is_active', '-updated_at')
+        )
+        disease_registry = AIModelArtifactSerializer(disease_queryset, many=True, context={'request': request}).data
+
+        soil_queryset = (
+            AIModelArtifact.objects.filter(operation=AIModelArtifact.Operation.SOIL_CLASSIFICATION)
+            .order_by('crop_type', '-is_active', '-updated_at')
+        )
+        soil_registry = AIModelArtifactSerializer(soil_queryset, many=True, context={'request': request}).data
+
+        return Response({
+            'registry': disease_registry,  # backward compatibility
+            'disease': {
+                'registry': disease_registry,
+            },
+            'soil': {
+                'registry': soil_registry,
+            },
+            'gemini': {},
+        })
+
+    def patch(self, request):
+        config = AIServiceConfiguration.get_solo()
+        serializer = AIServiceConfigurationSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        _invalidate_gemini_client_cache()
+        return Response(serializer.data)
+
+
+class CropViewSet(viewsets.ModelViewSet):
+    """Manage crop names used by the Model Hub dropdown."""
+    permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
+    serializer_class = CropSerializer
+
+    def get_queryset(self):
+        return Crop.objects.all().order_by('english_name')
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class ActiveDiseaseCropsView(APIView):
+    """
+    GET /api/ai/active-disease-crops/
+
+    Public (IsAuthenticated) endpoint that returns active disease-detection
+    models grouped by crop.  Used by the farmer-facing DiseaseDetectPage so
+    that regular users don't need the IsAIModelManager permission.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(tags=['AI'])
+    def get(self, request):
+        queryset = (
+            AIModelArtifact.objects.filter(
+                operation=AIModelArtifact.Operation.DISEASE_DETECTION,
+                is_active=True,
+            ).order_by('crop_type', '-updated_at')
+        )
+        data = AIModelArtifactSerializer(queryset, many=True, context={'request': request}).data
+        return Response({'disease': {'registry': data}})
 
 
 # ============================================

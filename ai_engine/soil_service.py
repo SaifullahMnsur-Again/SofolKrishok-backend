@@ -11,6 +11,7 @@ import logging
 import numpy as np
 from PIL import Image
 from django.conf import settings
+from .models import AIModelArtifact
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Model Cache
 # ============================================
 _soil_model = None
+_soil_model_cache_key = None
 
 # Soil type classes (from the training script README)
 SOIL_CLASSES = {
@@ -38,7 +40,42 @@ IMG_SIZE = (224, 224)
 
 def _load_model():
     """Load the soil classification model."""
-    global _soil_model
+    global _soil_model, _soil_model_cache_key
+    from pathlib import Path
+
+    artifact = (
+        AIModelArtifact.objects.filter(
+            operation=AIModelArtifact.Operation.SOIL_CLASSIFICATION,
+            is_active=True,
+        )
+        .order_by('-updated_at', '-created_at')
+        .first()
+    )
+
+    if artifact:
+        cache_key = f"artifact:{artifact.pk}:{artifact.updated_at.timestamp()}"
+        if _soil_model is not None and _soil_model_cache_key == cache_key:
+            return _soil_model
+
+        # Try relative path first (new hub flow), then legacy field
+        model_path_to_load = None
+        if artifact.model_path:
+            model_path_to_load = Path(settings.BASE_DIR) / artifact.model_path
+        elif artifact.model_file:
+            model_path_to_load = artifact.model_file.path
+        
+        if not model_path_to_load or not os.path.exists(model_path_to_load):
+            raise FileNotFoundError(
+                f"Active soil model '{artifact.display_name}' is missing its model file."
+            )
+
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU
+        import tensorflow as tf
+
+        logger.info(f"Loading active soil model '{artifact.display_name}' from {model_path_to_load}")
+        _soil_model = tf.keras.models.load_model(str(model_path_to_load))
+        _soil_model_cache_key = cache_key
+        return _soil_model
 
     if _soil_model is not None:
         return _soil_model

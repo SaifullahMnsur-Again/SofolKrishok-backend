@@ -20,7 +20,7 @@ from typing import Optional
 from django.conf import settings
 from google import genai
 
-from .models import ChatSession, ChatMessage
+from .models import ChatSession, ChatMessage, AIServiceConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -28,27 +28,34 @@ logger = logging.getLogger(__name__)
 # Gemini Client (singleton-like)
 # ============================================
 _client = None
+_client_api_key = None
 
 
 def get_gemini_client():
     """Get or create the Gemini API client."""
-    global _client
-    if _client is None:
-        api_key = settings.GEMINI_API_KEY
+    global _client, _client_api_key
+    config = AIServiceConfiguration.get_solo()
+    api_key = config.gemini_api_key or settings.GEMINI_API_KEY
+    if _client is None or _client_api_key != api_key:
         if not api_key or api_key == 'your-gemini-api-key-here':
             raise ValueError(
                 "GEMINI_API_KEY is not configured. "
                 "Please set it in your .env file."
             )
         _client = genai.Client(api_key=api_key)
+        _client_api_key = api_key
     return _client
 
 
 def _candidate_models() -> list[str]:
     """Build an ordered model list: primary, secondary, tertiary, then safe fallbacks."""
+    config = AIServiceConfiguration.get_solo()
     primary = getattr(settings, 'GEMINI_MODEL', '') or 'gemini-2.5-flash'
     secondary = getattr(settings, 'GEMINI_SECONDARY_MODEL', '') or 'gemini-2.5-flash-lite-preview'
     tertiary = getattr(settings, 'GEMINI_TERTIARY_MODEL', '') or 'gemini-2.5-flash'
+    primary = config.gemini_model or primary
+    secondary = config.gemini_secondary_model or secondary
+    tertiary = config.gemini_tertiary_model or tertiary
     # Keep additional known fast models as tail fallbacks for transient saturation.
     fallback_models = [
         'gemini-2.0-flash',

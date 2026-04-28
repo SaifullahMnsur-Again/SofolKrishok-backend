@@ -1,5 +1,7 @@
-from django.db import models
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.db.models import Q
 
 
 class ChatSession(models.Model):
@@ -127,3 +129,128 @@ class SoilClassificationLog(models.Model):
 
     def __str__(self):
         return f"{self.predicted_type} ({self.confidence:.1f}%)"
+
+
+class Crop(models.Model):
+    """Canonical crop list used by the Model Hub for dropdowns.
+
+    `english_name` is unique and used as the identifier shown in the UI.
+    `bengali_name` stores the corresponding Bangla display name.
+    """
+
+    english_name = models.CharField(max_length=120, unique=True)
+    bengali_name = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        db_table = 'crops'
+        ordering = ['english_name']
+
+    def save(self, *args, **kwargs):
+        previous_english_name = None
+        if self.pk:
+            previous_english_name = Crop.objects.filter(pk=self.pk).values_list('english_name', flat=True).first()
+
+        super().save(*args, **kwargs)
+
+        if previous_english_name and previous_english_name != self.english_name:
+            AIModelArtifact.objects.filter(crop_type=previous_english_name).update(crop_type=self.english_name)
+
+    def delete(self, *args, **kwargs):
+        AIModelArtifact.objects.filter(crop_type=self.english_name).update(is_active=False)
+        return super().delete(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.english_name} ({self.bengali_name})" if self.bengali_name else self.english_name
+
+
+class AIModelArtifact(models.Model):
+    class Operation(models.TextChoices):
+        DISEASE_DETECTION = 'disease_detection', 'Disease Detection'
+        SOIL_CLASSIFICATION = 'soil_classification', 'Soil Classification'
+
+    operation = models.CharField(max_length=32, choices=Operation.choices)
+    crop_type = models.CharField(max_length=50, blank=True, null=True)
+    # Canonical metadata fields requested by UI: model name and version
+    model_name = models.CharField(max_length=255, blank=True, null=True)
+    version = models.CharField(max_length=64, blank=True, null=True)
+    display_name = models.CharField(max_length=255)
+    # Legacy upload fields kept for backward compatibility.
+    model_file = models.FileField(upload_to='ai_models/', blank=True, null=True)
+    indices_file = models.FileField(upload_to='ai_models/', blank=True, null=True)
+    # Relative filesystem paths used by the new model hub flow.
+    model_path = models.CharField(max_length=500, blank=True, null=True)
+    indices_path = models.CharField(max_length=500, blank=True, null=True)
+    is_active = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_ai_models',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ai_model_artifacts'
+        ordering = ['operation', 'crop_type', '-is_active', '-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['operation', 'crop_type'],
+                condition=Q(is_active=True),
+                name='unique_active_ai_model_per_scope',
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        has_model = bool(self.model_path) or bool(self.model_file)
+        if not has_model:
+            raise ValidationError({'model_path': 'Model path is required.'})
+
+        if self.operation == self.Operation.DISEASE_DETECTION:
+            self.crop_type = (self.crop_type or '').strip() or None
+            if not self.crop_type:
+                raise ValidationError({'crop_type': 'Crop type is required for disease detection models.'})
+            has_indices = bool(self.indices_path) or bool(self.indices_file)
+            if not has_indices:
+                raise ValidationError({'indices_path': 'Indices path is required for disease detection models.'})
+        elif self.operation == self.Operation.SOIL_CLASSIFICATION:
+            self.crop_type = None
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        with transaction.atomic():
+            if self.is_active:
+                queryset = AIModelArtifact.objects.filter(operation=self.operation)
+                queryset = queryset.filter(crop_type=self.crop_type)
+                queryset.exclude(pk=self.pk).update(is_active=False)
+            super().save(*args, **kwargs)
+
+    def __str__(self):
+        suffix = f" ({self.crop_type})" if self.crop_type else ''
+        state = 'active' if self.is_active else 'inactive'
+        return f"{self.display_name} - {self.get_operation_display()}{suffix} [{state}]"
+
+
+class AIServiceConfiguration(models.Model):
+    """Singleton store for AI service settings such as the Gemini API key."""
+
+    singleton_key = models.CharField(max_length=20, unique=True, default='default', editable=False)
+    gemini_api_key = models.TextField(blank=True, help_text='Stored Gemini API key used by the AI assistant.')
+    gemini_model = models.CharField(max_length=120, blank=True)
+    gemini_secondary_model = models.CharField(max_length=120, blank=True)
+    gemini_tertiary_model = models.CharField(max_length=120, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ai_service_configuration'
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(singleton_key='default')
+        return obj
+
+    def __str__(self):
+        return 'AI service configuration'
