@@ -12,14 +12,57 @@ from .serializers import ConsultationSlotSerializer, TicketSerializer, SHIFT_TIM
 from users.models import Notification, CustomUser
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='coverage', decorator=swagger_auto_schema(tags=['Consultation']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Consultation - Slots'],
+    operation_description='List consultation slots with optional date/shift/expert filters.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Consultation - Slots'],
+    operation_description='Get consultation slot details.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Consultation - Slots'],
+    operation_description='Create slot(s). Can auto-generate shift slots in 20-minute intervals.'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Consultation - Slots'],
+    operation_description='Replace consultation slot details.'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Consultation - Slots'],
+    operation_description='Partially update a consultation slot.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Consultation - Slots'],
+    operation_description='Delete a consultation slot.'
+))
+@method_decorator(name='coverage', decorator=swagger_auto_schema(
+    tags=['Consultation - Slots'],
+    operation_description='Get shift coverage analytics over upcoming days.'
+))
 class ConsultationSlotViewSet(viewsets.ModelViewSet):
+    """Consultation slot scheduling and staffing coverage.
+
+    Audience: Staff
+
+    Manage expert availability slots and generate slot coverage reports.
+
+    **Available Actions:**
+    - GET /consultation/slots/ - List slots
+    - GET /consultation/slots/{id}/ - Retrieve slot
+    - POST /consultation/slots/ - Create slot(s)
+    - PATCH /consultation/slots/{id}/ - Update slot
+    - DELETE /consultation/slots/{id}/ - Delete slot
+    - GET /consultation/slots/coverage/ - Load/capacity analytics
+
+    **Scheduling Mode:**
+    - Single-slot mode: provide start_time/end_time
+    - Shift-sync mode: omit start_time to auto-create 20-minute slots for shift window
+
+    **Permissions:**
+    - Management actions allowed for assigner roles only
+    - Experts can view their own slots
+    """
     serializer_class = ConsultationSlotSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -243,16 +286,66 @@ class ConsultationSlotViewSet(viewsets.ModelViewSet):
         })
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='book', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='start_session', decorator=swagger_auto_schema(tags=['Consultation']))
-@method_decorator(name='complete_session', decorator=swagger_auto_schema(tags=['Consultation']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='List consultation tickets visible to the current role.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Get ticket details and session state.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Create ticket record directly (admin/staff workflows).'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Replace ticket details.'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Update ticket fields.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Delete ticket record.'
+))
+@method_decorator(name='book', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Book an available slot and create a consultation ticket.'
+))
+@method_decorator(name='start_session', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Expert starts live consultation session.'
+))
+@method_decorator(name='complete_session', decorator=swagger_auto_schema(
+    tags=['Consultation - Tickets'],
+    operation_description='Farmer or expert completes consultation session.'
+))
 class TicketViewSet(viewsets.ModelViewSet):
+    """Consultation booking tickets and live session flow.
+
+    Audience: Both
+
+    Handles booking, session start, and session completion lifecycle.
+
+    **Available Actions:**
+    - GET /consultation/tickets/ - List tickets
+    - GET /consultation/tickets/{id}/ - Retrieve ticket
+    - POST /consultation/tickets/book/ - Book slot
+    - POST /consultation/tickets/{id}/start_session/ - Start session (expert)
+    - POST /consultation/tickets/{id}/complete_session/ - Complete session
+
+    **Notifications:**
+    - Farmer notified on successful booking
+    - Expert notified on new booking
+    - Farmer notified when expert joins session
+
+    **Role Visibility:**
+    - Farmer: own tickets
+    - Expert: tickets assigned to their slots
+    - Management roles: all tickets
+    """
     serializer_class = TicketSerializer
     permission_classes = [permissions.IsAuthenticated]
 

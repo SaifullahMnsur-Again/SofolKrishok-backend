@@ -127,14 +127,50 @@ def ensure_default_plans():
         SubscriptionPlan.objects.update_or_create(name=name, defaults=defaults)
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Finance']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Finance']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Finance']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Finance']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Finance']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Finance']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Finance - Plans'],
+    operation_description='List subscription plans (active-only for most users).'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Finance - Plans'],
+    operation_description='Get details for a subscription plan.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Finance - Plans'],
+    operation_description='Create a new subscription plan and optionally notify farmers.'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Finance - Plans'],
+    operation_description='Replace subscription plan details.'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Finance - Plans'],
+    operation_description='Partially update a subscription plan.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Finance - Plans'],
+    operation_description='Soft-delete (deactivate) a subscription plan.'
+))
 class SubscriptionPlanViewSet(viewsets.ModelViewSet):
-    """GET/POST /api/finance/plans/ — Manage subscription plans (GM only)."""
+    """Subscription plan catalog and lifecycle management.
+
+    Audience: Both
+
+    Exposes plan catalog to users and allows privileged roles to manage plans.
+
+    **Available Actions:**
+    - GET /finance/plans/ - List plans
+    - GET /finance/plans/{id}/ - Retrieve plan
+    - POST /finance/plans/ - Create plan (manager)
+    - PATCH /finance/plans/{id}/ - Update plan (manager)
+    - DELETE /finance/plans/{id}/ - Deactivate plan (manager)
+    - POST /finance/plans/seed-defaults/ - Seed default plans
+
+    **Role Rules:**
+    - Leaders/managers can view all plans
+    - Most users see only active plans
+    - Creation and configuration limited to top-level roles
+    """
     serializer_class = SubscriptionPlanSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -203,9 +239,17 @@ class SubscriptionPlanViewSet(viewsets.ModelViewSet):
                 self.permission_denied(request, message="Only General Managers can configure subscriptions.")
 
 
-@method_decorator(name='get', decorator=swagger_auto_schema(tags=['Finance']))
+@method_decorator(name='get', decorator=swagger_auto_schema(
+    tags=['Finance - Subscription'],
+    operation_description='Get the current authenticated user subscription. Creates default if missing.'
+))
 class SubscriptionView(generics.RetrieveAPIView):
-    """GET /api/finance/subscription/ — Get current user's subscription."""
+    """Current user subscription snapshot.
+
+    Audience: Both
+
+    Returns active subscription for authenticated user and lazily initializes a fallback subscription when absent.
+    """
     serializer_class = SubscriptionSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -236,10 +280,21 @@ class SubscriptionView(generics.RetrieveAPIView):
         return sub
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Finance']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Finance']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Finance - Ledger'],
+    operation_description='List transactions for user or all transactions for privileged roles.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Finance - Ledger'],
+    operation_description='Get transaction details by ID.'
+))
 class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
-    """GET /api/finance/ledger/ — View transaction history."""
+    """Transaction ledger (read-only).
+
+    Audience: Both
+
+    Provides transaction visibility with role-based scope control.
+    """
     serializer_class = TransactionSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -255,10 +310,23 @@ from rest_framework.response import Response
 import uuid
 
 class CheckoutView(APIView):
-    """POST /api/finance/checkout/ — Initiate a checkout and return payment URL."""
+    """Checkout session creation for subscriptions and orders.
+
+    Audience: Both
+
+    Creates a pending debit transaction and returns payment links.
+
+    **Accepted Inputs:**
+    - plan_id: Checkout a subscription plan
+    - order_id: Checkout a marketplace order
+    - amount: Manual amount (fallback)
+    """
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(tags=['Finance'])
+    @swagger_auto_schema(
+        tags=['Finance - Checkout'],
+        operation_description='Initiate checkout and return payment URLs for callback simulation.'
+    )
     def post(self, request):
         amount = request.data.get('amount')
         description = request.data.get('description', 'Purchase')
@@ -327,10 +395,23 @@ class CheckoutView(APIView):
 
 
 class PaymentCallbackView(APIView):
-    """POST /api/finance/payment/callback/ — SSLCommerz IPN simulation."""
+    """Payment gateway callback handler (simulation).
+
+    Audience: Both
+
+    Processes gateway status updates and finalizes transaction state.
+
+    **Behavior on success:**
+    - Marks transaction completed
+    - Activates/extends subscription if plan purchase
+    - Moves order to processing if order payment
+    """
     permission_classes = [permissions.AllowAny]
 
-    @swagger_auto_schema(tags=['Finance'])
+    @swagger_auto_schema(
+        tags=['Finance - Checkout'],
+        operation_description='Handle payment callback and finalize transaction outcomes.'
+    )
     def post(self, request):
         ref_id = request.data.get('reference_id')
         gateway_status = (request.data.get('status') or 'success').lower()

@@ -290,6 +290,27 @@ CELERY_TIMEZONE = TIME_ZONE
 SWAGGER_SETTINGS = {
     'TAGS_SORTER': 'alpha',
     'OPERATIONS_SORTER': 'alpha',
+    'USE_SESSION_AUTH': False,
+    'PERSIST_AUTH': True,
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'JWT access token. Format: Bearer <access_token>',
+        },
+        'RefreshToken': {
+            'type': 'apiKey',
+            'name': 'X-Refresh-Token',
+            'in': 'header',
+            'description': 'Optional helper for testing token refresh flows in Swagger UI. The refresh endpoint primarily accepts refresh token in request body.',
+        },
+    },
+    'SECURITY_REQUIREMENTS': [
+        {
+            'Bearer': [],
+        }
+    ],
 }
 
 USE_X_FORWARDED_HOST = True

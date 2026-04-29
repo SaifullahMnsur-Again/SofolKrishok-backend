@@ -46,6 +46,13 @@ def _invalidate_gemini_client_cache():
 
 
 class AIModelArtifactViewSet(viewsets.ModelViewSet):
+    """AI model artifact registry management.
+
+    Audience: Staff
+
+    Manage model artifacts used by disease detection and soil classification services.
+    Includes activation workflow to switch currently active model per scope.
+    """
     serializer_class = AIModelArtifactSerializer
     permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -99,6 +106,13 @@ class AIModelArtifactViewSet(viewsets.ModelViewSet):
 
 
 class AIModelUsageHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """AI model usage analytics and audit logs.
+
+    Audience: Staff
+
+    Read-only endpoint for filtering and analyzing model usage, failures, confidence trends,
+    and service-level behavior.
+    """
     serializer_class = AIModelUsageHistorySerializer
     permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
 
@@ -238,6 +252,13 @@ class AIModelUsageHistoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class GeminiConfigurationView(APIView):
+    """Gemini service configuration management.
+
+    Audience: Staff
+
+    Allows AI managers to view and update Gemini API/model settings.
+    Any update invalidates cached Gemini client configuration.
+    """
     permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
 
     def get(self, request):
@@ -265,7 +286,12 @@ class GeminiConfigurationView(APIView):
 
 
 class AIModelInventoryView(APIView):
-    """Return the manually managed model registry for the Model Hub UI."""
+    """Model inventory snapshot for Model Hub UI.
+
+    Audience: Staff
+
+    Returns disease and soil model registries plus Gemini config envelope for management dashboards.
+    """
     permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
 
     def get(self, request):
@@ -302,7 +328,12 @@ class AIModelInventoryView(APIView):
 
 
 class CropViewSet(viewsets.ModelViewSet):
-    """Manage crop names used by the Model Hub dropdown."""
+    """Crop dictionary management for AI model tools.
+
+    Audience: Staff
+
+    Maintains crop catalog entries shown in AI management and inference workflows.
+    """
     permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
     serializer_class = CropSerializer
 
@@ -314,12 +345,11 @@ class CropViewSet(viewsets.ModelViewSet):
 
 
 class ActiveDiseaseCropsView(APIView):
-    """
-    GET /api/ai/active-disease-crops/
+    """Active disease model registry for farmer-facing clients.
 
-    Public (IsAuthenticated) endpoint that returns active disease-detection
-    models grouped by crop.  Used by the farmer-facing DiseaseDetectPage so
-    that regular users don't need the IsAIModelManager permission.
+    Audience: Both
+
+    Exposes active disease models grouped by crop without requiring AI manager role.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -339,12 +369,20 @@ class ActiveDiseaseCropsView(APIView):
 # Chat Session Management (Memory)
 # ============================================
 
-@method_decorator(name='get', decorator=swagger_auto_schema(tags=['AI']))
-@method_decorator(name='post', decorator=swagger_auto_schema(tags=['AI']))
+@method_decorator(name='get', decorator=swagger_auto_schema(
+    tags=['AI - Chat Sessions'],
+    operation_description='List chat sessions for current user.'
+))
+@method_decorator(name='post', decorator=swagger_auto_schema(
+    tags=['AI - Chat Sessions'],
+    operation_description='Create a new chat session.'
+))
 class ChatSessionListCreateView(generics.ListCreateAPIView):
-    """
-    GET  /api/ai/chat-sessions/ — List all chat sessions for the current user
-    POST /api/ai/chat-sessions/ — Create a new chat session
+    """Chat session list/create endpoint.
+
+    Audience: Both
+
+    Provides per-user chat session listing and session creation for Gemini conversations.
     """
     serializer_class = ChatSessionSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -356,15 +394,28 @@ class ChatSessionListCreateView(generics.ListCreateAPIView):
         serializer.save(user=self.request.user)
 
 
-@method_decorator(name='get', decorator=swagger_auto_schema(tags=['AI']))
-@method_decorator(name='put', decorator=swagger_auto_schema(tags=['AI']))
-@method_decorator(name='patch', decorator=swagger_auto_schema(tags=['AI']))
-@method_decorator(name='delete', decorator=swagger_auto_schema(tags=['AI']))
+@method_decorator(name='get', decorator=swagger_auto_schema(
+    tags=['AI - Chat Sessions'],
+    operation_description='Retrieve a chat session with message history.'
+))
+@method_decorator(name='put', decorator=swagger_auto_schema(
+    tags=['AI - Chat Sessions'],
+    operation_description='Replace chat session details.'
+))
+@method_decorator(name='patch', decorator=swagger_auto_schema(
+    tags=['AI - Chat Sessions'],
+    operation_description='Partially update chat session details.'
+))
+@method_decorator(name='delete', decorator=swagger_auto_schema(
+    tags=['AI - Chat Sessions'],
+    operation_description='Delete chat session and related messages.'
+))
 class ChatSessionDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    GET    /api/ai/chat-sessions/{id}/ — Get session with full message history
-    PUT    /api/ai/chat-sessions/{id}/ — Update session (rename, etc.)
-    DELETE /api/ai/chat-sessions/{id}/ — Delete session and all messages
+    """Chat session detail/update/delete endpoint.
+
+    Audience: Both
+
+    Supports retrieval, update, and deletion of a specific user chat session.
     """
     serializer_class = ChatSessionDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -378,26 +429,56 @@ class ChatSessionDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ============================================
 
 class GeminiChatView(APIView):
-    """
-    POST /api/ai/gemini-chat/
+    """AI chat with full conversation memory.
+
+    Audience: Both
     
-    Send a message to the Gemini AI with full conversation memory.
-    The entire chat history is replayed as context on each request.
+    Send messages to Gemini AI with persistent conversation history. The entire chat history is automatically maintained and replayed as context for better contextual responses.
     
-    Request body:
-        {
-            "message": "My rice leaves are turning brown, what should I do?",
-            "session_id": 5,          // optional: reuse existing session
-            "land_id": 3              // optional: link to a land parcel for context
-        }
+    **Endpoint:** POST /ai/gemini-chat/
     
-    Response:
-        {
-            "session_id": 5,
-            "session_title": "Rice Brown Leaf Issue",
-            "response": "Based on your land in Rajshahi...",
-            "message_count": 12
-        }
+    **Authentication:** Required (Bearer token)
+    
+    **Request Body:**
+    ```json
+    {
+      "message": "How do I prevent rice blast disease?",
+      "session_id": 5,
+      "land_id": 3
+    }
+    ```
+    
+    **Request Fields:**
+    - message: User query (required, max 2000 chars)
+    - session_id: Existing chat session ID to continue (optional)
+    - land_id: Link chat to a specific land parcel for context (optional)
+    
+    **Response:**
+    ```json
+    {
+      "session_id": 5,
+      "session_title": "Rice Disease Prevention",
+      "response": "To prevent rice blast disease...",
+      "message_count": 12
+    }
+    ```
+    
+    **Response Fields:**
+    - session_id: Chat session ID for future messages
+    - session_title: Auto-generated session title based on conversation
+    - response: AI-generated answer
+    - message_count: Total messages in this session
+    
+    **Features:**
+    - Full chat history context: Each message includes all previous conversation
+    - Land parcel context: Responses tailored to specific land characteristics
+    - Auto-session creation: New session created if session_id not provided
+    - Usage tracking: All requests logged for quota enforcement
+    - Error handling: Clear error messages for API failures
+    
+    **Error Responses:**
+    - 404: Session not found (if invalid session_id provided)
+    - 503: Gemini API unavailable or rate limited
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -505,14 +586,69 @@ class GeminiChatView(APIView):
 # ============================================
 
 class DiseaseDetectView(APIView):
-    """
-    POST /api/ai/disease-detect/
+    """Crop disease detection via image upload.
+
+    Audience: Farmer
     
-    Upload a crop image for disease detection.
+    Upload a crop leaf or plant image for AI-powered disease detection. Supports corn, potato, rice, and wheat crops with high accuracy disease classification.
     
-    Form data:
-        image: <file>
-        crop_type: corn|potato|rice|wheat
+    **Endpoint:** POST /ai/disease-detect/
+    
+    **Authentication:** Required (Bearer token)
+    
+    **Request Format:** multipart/form-data
+    
+    **Request Fields:**
+    - image: Image file (JPG/PNG, max 10MB) - required
+    - crop_type: corn, potato, rice, or wheat - required
+    - land_id: Link detection to a specific land parcel (optional)
+    
+    **Response:**
+    ```json
+    {
+      "predicted_class": "Rice Blast",
+      "confidence": "95.2",
+      "disease_description": "Fungal infection caused by Pyricularia oryzae",
+      "treatment_recommendations": [
+        "Apply fungicide XYZ at recommended concentration",
+        "Improve field drainage to reduce humidity",
+        "Harvest affected areas to prevent spread"
+      ],
+      "all_predictions": {
+        "Rice Blast": "95.2",
+        "Brown Spot": "3.1",
+        "Leaf Scald": "1.7"
+      },
+      "image_url": "/media/disease_scans/rice_2026_04_30_abc123.jpg",
+      "detection_timestamp": "2026-04-30T10:30:00Z"
+    }
+    ```
+    
+    **Response Fields:**
+    - predicted_class: Most likely disease detected
+    - confidence: Detection confidence percentage (0-100)
+    - disease_description: Detailed disease information
+    - treatment_recommendations: List of treatment actions
+    - all_predictions: All disease probabilities (top N)
+    - image_url: Saved scan image URL
+    - detection_timestamp: When detection was performed
+    
+    **Supported Crops & Diseases:**
+    - Rice: Blast, Brown Spot, Leaf Scald, Septoria
+    - Wheat: Rusts, Septoria, Powdery Mildew, Scab
+    - Corn: Leaf Blight, Rust, Gray Leaf Spot
+    - Potato: Late Blight, Early Blight, Scab
+    
+    **Best Practices:**
+    - Use high-quality, clear photos in good lighting
+    - Capture affected leaves/stems (not entire plant)
+    - Ensure image is focused and not blurry
+    - Multiple angles improve accuracy
+    
+    **Error Responses:**
+    - 400: Invalid crop_type or missing image
+    - 413: Image file too large
+    - 500: Model inference failed
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -614,11 +750,83 @@ class DiseaseDetectView(APIView):
 # ============================================
 
 class SoilClassifyView(APIView):
-    """
-    POST /api/ai/soil-classify/
+    """Soil classification via image analysis.
+
+    Audience: Farmer
     
-    Upload a soil image for classification.
-    Optionally link result to a land parcel.
+    Upload a soil sample image for AI-powered soil type classification, texture analysis, and fertilizer recommendations. Provides comprehensive soil management guidance.
+    
+    **Endpoint:** POST /ai/soil-classify/
+    
+    **Authentication:** Required (Bearer token)
+    
+    **Request Format:** multipart/form-data
+    
+    **Request Fields:**
+    - image: Soil sample photo (JPG/PNG, max 10MB) - required
+    - land_id: Link analysis to a specific land parcel (optional)
+    
+    **Response:**
+    ```json
+    {
+      "soil_type": "loamy",
+      "texture_class": "sandy-clay-loam",
+      "ph_level": "7.2",
+      "fertility_rating": "high",
+      "organic_matter": "medium",
+      "drainage_rating": "well-drained",
+      "recommended_crops": [
+        "rice",
+        "wheat",
+        "vegetables",
+        "legumes"
+      ],
+      "not_recommended_crops": [
+        "sugarcane"
+      ],
+      "fertilizer_recommendations": {
+        "nitrogen_kg_per_acre": "100",
+        "phosphorus_kg_per_acre": "50",
+        "potassium_kg_per_acre": "40",
+        "organic_matter_kg_per_acre": "5000"
+      },
+      "soil_improvement_tips": [
+        "Add organic compost to improve water retention",
+        "Rotate crops annually to maintain fertility"
+      ],
+      "image_url": "/media/soil_scans/loam_2026_04_30_xyz789.jpg",
+      "analysis_timestamp": "2026-04-30T11:15:00Z"
+    }
+    ```
+    
+    **Response Fields:**
+    - soil_type: Primary classification (clay, loam, sandy, rocky)
+    - texture_class: Detailed USDA texture classification
+    - ph_level: Soil pH (0-14)
+    - fertility_rating: high, medium, low
+    - organic_matter: Organic content percentage
+    - drainage_rating: Drainage characteristics
+    - recommended_crops: Suitable crop list
+    - not_recommended_crops: Crops to avoid
+    - fertilizer_recommendations: Nutrient application rates
+    - soil_improvement_tips: Management suggestions
+    - image_url: Stored analysis image
+    - analysis_timestamp: Analysis date/time
+    
+    **Soil Types & Characteristics:**
+    - Sandy: Drains quickly, low fertility, needs frequent watering
+    - Clay: High fertility, poor drainage, compacts easily
+    - Loam: Balanced texture, good drainage, best all-around soil
+    - Rocky: Poor water retention, difficult cultivation
+    
+    **Best Practices:**
+    - Collect soil sample from multiple areas of field
+    - Take photo in natural daylight
+    - Show soil texture clearly (crumbled/compressed)
+    - Ensure image is in focus
+    
+    **Linked to Land Parcel:**
+    If land_id provided, analysis is associated with that parcel for history tracking and recommendations.
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -725,15 +933,65 @@ class SoilClassifyView(APIView):
 # ============================================
 
 class VoiceCommandView(APIView):
-    """
-    POST /api/ai/voice-command/
+    """Voice command processing and navigation intent recognition.
+
+    Audience: Both
     
-    Accepts text or audio blobs (simulated) and extracts a navigation intent.
-    Mapping:
-    - "market" | "buy" | "shop" -> MARKETPLACE
-    - "weather" | "rain"         -> DASHBOARD (Weather card focus)
-    - "help" | "chat" | "talk"   -> AI_CHAT
-    - "bill" | "pay" | "credit"  -> BILLING
+    Process voice or text commands to extract user intent and navigate to relevant app sections. Supports Bangla speech transcription via Whisper.
+    
+    **Endpoint:** POST /ai/voice-command/
+    
+    **Authentication:** Required (Bearer token)
+    
+    **Request Format:** multipart/form-data OR JSON
+    
+    **Request Fields (JSON):**
+    ```json
+    {
+      "text": "Show me the market"
+    }
+    ```
+    
+    **Request Fields (Multipart with Audio):**
+    - audio: Audio file (WAV/MP3, max 10MB)
+    - text: Optional text fallback if audio fails
+    
+    **Response:**
+    ```json
+    {
+      "original_text": "Show me the market",
+      "transcribed": false,
+      "intent": "NAVIGATE",
+      "target": "/marketplace",
+      "voice_response": "Okay, taking you to Marketplace."
+    }
+    ```
+    
+    **Intent Recognition Keywords:**
+    
+    | Intent | Keywords | Target |
+    |--------|----------|--------|
+    | Marketplace | market, buy, seed, shop, order | /marketplace |
+    | Weather | weather, rain, forecast, temperature | /dashboard |
+    | Chat | chat, help, assistant, talk | /chat |
+    | Billing | bill, pay, credit, subscription | /billing |
+    | Land Mgmt | land, field, parcel | /lands |
+    | Disease | disease, sick, detect, leaf | /disease-detect |
+    
+    **Response Fields:**
+    - original_text: Recognized/provided text
+    - transcribed: Whether audio was transcribed to text
+    - intent: Recognized action intent
+    - target: Navigation target URL
+    - voice_response: Audio-ready response text
+    
+    **Supported Languages:**
+    - Bengali (Bangla) - via Whisper model
+    - English - direct text processing
+    
+    **Error Responses:**
+    - 400: No text or valid audio provided
+    - 503: Whisper transcription failed
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -794,10 +1052,41 @@ class VoiceCommandView(APIView):
 
 
 class WeatherForecastView(APIView):
-    """GET /api/ai/weather-forecast/ — Current + upcoming forecast with alerts."""
+    """Weather forecast with risk alerts and farming recommendations.
+
+    Audience: Both
+
+    Retrieve current and upcoming weather forecasts for a location, including risk alerts relevant to farming operations.
+
+    **Endpoint:** GET /ai/weather-forecast/
+
+    **Authentication:** Required (Bearer token)
+
+    **Query Parameters:**
+    - lat: Latitude (optional)
+    - lon: Longitude (optional)
+    - days: Forecast range in days (optional, 1-7)
+
+    **Location Resolution Priority:**
+    1. Query params lat/lon (if provided)
+    2. User's first land parcel with coordinates
+    3. Fallback to Rajshahi default coordinates
+
+    **Response Includes:**
+    - Current weather conditions
+    - Daily forecasts
+    - Farming-specific alerts
+    - Irrigation and field operation recommendations
+
+    **Automatic Notifications:**
+    Significant weather risk alerts are automatically saved as user notifications (deduplicated for 12 hours).
+    """
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(tags=['AI'])
+    @swagger_auto_schema(
+        tags=['AI'],
+        operation_description='Get weather forecast with agricultural alerts for a location.'
+    )
     def get(self, request):
         serializer = WeatherForecastSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)

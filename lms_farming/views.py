@@ -73,14 +73,74 @@ class FarmingWeatherSerializer(serializers.Serializer):
     days = serializers.IntegerField(required=False, min_value=1, max_value=7)
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='history', decorator=swagger_auto_schema(tags=['Farming']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Farming - Land'],
+    operation_description='List user land parcels with full details and status.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Farming - Land'],
+    operation_description='Get specific land parcel details.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Farming - Land'],
+    operation_description='Register a new land parcel.'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Farming - Land'],
+    operation_description='Replace land parcel details.'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Farming - Land'],
+    operation_description='Partially update land parcel.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Farming - Land'],
+    operation_description='Delete a land parcel.'
+))
+@method_decorator(name='history', decorator=swagger_auto_schema(
+    tags=['Farming - Land'],
+    operation_description='Get complete history of land parcel and crops grown.'
+))
 class LandParcelViewSet(viewsets.ModelViewSet):
+    """Land parcel management.
+
+    Audience: Farmer
+    
+    CRUD operations for managing user's agricultural land parcels. Each parcel tracks location, area, and soil characteristics.
+    
+    **Available Actions:**
+    - GET /farming/lands/ - List user's land parcels
+    - GET /farming/lands/{id}/ - Get land details
+    - POST /farming/lands/ - Register new land
+    - PUT /farming/lands/{id}/ - Replace land details
+    - PATCH /farming/lands/{id}/ - Update land fields
+    - DELETE /farming/lands/{id}/ - Remove land parcel
+    - GET /farming/lands/{id}/history/ - View complete land & crop history
+    
+    **Authentication:** Required (Bearer token)
+    
+    **Permissions:** Owners can only access their own land parcels
+    
+    **Fields:**
+    - id (read-only): Unique parcel identifier
+    - owner (read-only): User who registered the land
+    - name: Display name for the parcel (e.g., "North Field")
+    - location: Village/area description
+    - latitude: GPS latitude
+    - longitude: GPS longitude
+    - area_acres: Total area in decimal acres
+    - soil_type: Classification (loamy, sandy, clayey, rocky, etc.)
+    - notes: Additional information
+    - created_at (read-only): Registration timestamp
+    - updated_at (read-only): Last modification timestamp
+    
+    **Validation Rules:**
+    - name: Required, max 255 characters
+    - area_acres: Must be positive decimal (> 0)
+    - latitude: Between -90 and 90
+    - longitude: Between -180 and 180
+    - soil_type: Select from predefined types
+    """
     serializer_class = LandParcelSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
@@ -128,13 +188,74 @@ class LandParcelViewSet(viewsets.ModelViewSet):
         })
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Farming']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='List crop tracks (growing seasons) for user lands.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Get crop track details with activities log.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Create new crop track (season).'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Replace crop track details.'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Partially update crop track.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Delete a crop track.'
+))
 class CropTrackViewSet(viewsets.ModelViewSet):
+    """Crop tracking and activity logging.
+
+    Audience: Farmer
+    
+    Track individual crop growing seasons on each land parcel. Log farming activities (irrigation, fertilization, pesticide application, harvesting).
+    
+    **Available Actions:**
+    - GET /farming/tracks/ - List crop tracks
+    - GET /farming/tracks/{id}/ - Get crop track details
+    - POST /farming/tracks/ - Create new crop track
+    - PUT /farming/tracks/{id}/ - Replace track details
+    - PATCH /farming/tracks/{id}/ - Update track fields
+    - DELETE /farming/tracks/{id}/ - Delete crop track
+    - GET /farming/tracks/{id}/activities/ - List activities for this track
+    - POST /farming/tracks/{id}/activities/ - Log new farming activity
+    
+    **Authentication:** Required (Bearer token)
+    
+    **Permissions:** Access only own land parcels
+    
+    **Fields:**
+    - id (read-only): Track identifier
+    - land: Land parcel ID
+    - crop_name: Display name (e.g., "Rice")
+    - crop_type: Classification (rice, wheat, corn, potato, vegetables)
+    - planted_date: Sowing/planting date
+    - expected_harvest_date: Projected harvest date
+    - actual_harvest_date: Actual harvest date (populated after harvest)
+    - status: Current stage (active, harvested, completed)
+    - notes: Cultivation notes
+    
+    **Activity Types:**
+    - irrigation: Water application
+    - fertilization: Nutrient application
+    - pesticide: Pest/disease control
+    - weeding: Manual weed removal
+    - harvest: Crop harvesting
+    - other: Miscellaneous activity
+    
+    **Automatic Updates:**
+    - When harvest activity is logged, actual_harvest_date and status update automatically
+    - CropTrackHistory records all significant changes for audit trail
+    """
     serializer_class = CropTrackSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -215,13 +336,65 @@ class CropTrackViewSet(viewsets.ModelViewSet):
         return Response(CropActivityLogSerializer(activity).data, status=status.HTTP_201_CREATED)
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Farming']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='List crop growth stages.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Get specific growth stage details.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Create new growth stage for a crop.'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Replace growth stage details.'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Update growth stage fields.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Farming - Crops'],
+    operation_description='Delete a growth stage.'
+))
 class CropStageViewSet(viewsets.ModelViewSet):
+    """Crop growth stages.
+
+    Audience: Farmer
+    
+    Define and track specific growth stages (phenophases) during a crop's lifecycle. Each stage represents a distinct developmental phase with associated characteristics.
+    
+    **Available Actions:**
+    - GET /farming/stages/ - List all stages
+    - GET /farming/stages/{id}/ - Get stage details
+    - POST /farming/stages/ - Create stage
+    - PUT /farming/stages/{id}/ - Replace stage
+    - PATCH /farming/stages/{id}/ - Update stage
+    - DELETE /farming/stages/{id}/ - Delete stage
+    
+    **Authentication:** Required (Bearer token)
+    
+    **Permissions:** Access only own land crop stages
+    
+    **Fields:**
+    - id (read-only): Stage identifier
+    - track: Parent crop track ID
+    - stage_name: Phase name (Vegetative, Flowering, Grain Fill, Maturity)
+    - started_at: When stage began
+    - expected_end_at: Projected stage end
+    - actual_end_at: Actual stage end date
+    - description: Stage characteristics and management notes
+    - image_url: Reference image (optional)
+    
+    **Typical Rice Stages:**
+    1. Vegetative: Leaf production, tiller development (0-40 days)
+    2. Reproductive: Panicle initiation and development (40-70 days)
+    3. Grain Development: Grain filling (70-95 days)
+    4. Mature: Ready for harvest (95+ days)
+    """
     serializer_class = CropStageSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -229,13 +402,82 @@ class CropStageViewSet(viewsets.ModelViewSet):
         return CropStage.objects.filter(track__land__owner=self.request.user)
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Farming']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Farming']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Farming - Cycles'],
+    operation_description='List farming cycles for user lands.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Farming - Cycles'],
+    operation_description='Get farming cycle details with history.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Farming - Cycles'],
+    operation_description='Create new farming cycle.'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Farming - Cycles'],
+    operation_description='Replace farming cycle details.'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Farming - Cycles'],
+    operation_description='Update farming cycle fields.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Farming - Cycles'],
+    operation_description='Delete a farming cycle.'
+))
 class FarmingCycleViewSet(viewsets.ModelViewSet):
+    """Farming cycles and seasonal management.
+
+    Audience: Farmer
+    
+    Manage complete farming cycles (seasons) with financial tracking, yield predictions, and modification history. Each cycle represents one complete agricultural season on a specific land parcel.
+    
+    **Available Actions:**
+    - GET /farming/cycles/ - List farming cycles
+    - GET /farming/cycles/{id}/ - Get cycle details
+    - POST /farming/cycles/ - Create cycle
+    - PUT /farming/cycles/{id}/ - Replace cycle
+    - PATCH /farming/cycles/{id}/ - Update cycle
+    - DELETE /farming/cycles/{id}/ - Delete cycle
+    - GET /farming/cycles/{id}/history/ - View modification history
+    
+    **Authentication:** Required (Bearer token)
+    
+    **Permissions:** Owner access only
+    
+    **Fields:**
+    - id (read-only): Cycle identifier
+    - land: Land parcel ID
+    - name: Cycle name (e.g., "Summer Rice 2026")
+    - description: Season description and goals
+    - started_at: Season start date
+    - expected_end_at: Projected season end
+    - actual_end_at: Actual season end date
+    - status: Current status (planning, active, completed, archived)
+    - soil_preparation_notes: Pre-planting soil management
+    - expected_yield: Projected yield (kg)
+    - actual_yield: Harvested yield (kg)
+    - total_investment: Total cost in BDT (seeds, fertilizer, labor)
+    - total_revenue: Total income in BDT
+    - notes: General notes
+    
+    **Statuses:**
+    - planning: Initial setup phase
+    - active: Crop in progress
+    - completed: Season finished, yield recorded
+    - archived: Historical data
+    
+    **Financial Tracking:**
+    - Investment includes seeds, fertilizer, pesticides, labor
+    - Revenue calculated from harvest quantity and market price
+    - ROI = (revenue - investment) / investment * 100
+    
+    **History Tracking:**
+    - All modifications automatically recorded
+    - Immutable audit trail for compliance
+    - Tracks yield updates, revenue changes, status transitions
+    """
     serializer_class = FarmingCycleSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
@@ -307,10 +549,19 @@ class FarmingCycleViewSet(viewsets.ModelViewSet):
 
 
 class FarmingWeatherView(APIView):
-    """GET /api/farming/weather/ — OpenWeather forecast for farmer lands."""
+    """Weather forecast endpoint for farming operations.
+
+    Audience: Both
+
+    Returns weather forecast with optional coordinates. If coordinates are omitted,
+    resolves location from user's first land parcel; otherwise uses default fallback coordinates.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(tags=['Farming'])
+    @swagger_auto_schema(
+        tags=['Farming - Weather'],
+        operation_description='Get weather forecast for provided coordinates or default farm location.'
+    )
     def get(self, request):
         serializer = FarmingWeatherSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)

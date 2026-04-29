@@ -9,13 +9,52 @@ from .models import Product, Order, OrderItem, OrderStatusHistory
 from .serializers import ProductSerializer, OrderSerializer
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Marketplace']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Marketplace - Products'],
+    operation_description='List products with optional category filtering.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Marketplace - Products'],
+    operation_description='Get product details by ID.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Marketplace - Products'],
+    operation_description='Create a new product listing (staff only).'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Marketplace - Products'],
+    operation_description='Replace an existing product (staff only).'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Marketplace - Products'],
+    operation_description='Partially update product fields (staff only).'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Marketplace - Products'],
+    operation_description='Soft-delete a product (staff only).'
+))
 class ProductViewSet(viewsets.ModelViewSet):
+    """Marketplace product catalog management.
+
+    Audience: Both
+
+    Handles product browsing for all authenticated users and product management for staff roles.
+
+    **Available Actions:**
+    - GET /marketplace/products/ - List products
+    - GET /marketplace/products/{id}/ - Retrieve product
+    - POST /marketplace/products/ - Create product (staff)
+    - PUT /marketplace/products/{id}/ - Replace product (staff)
+    - PATCH /marketplace/products/{id}/ - Update product (staff)
+    - DELETE /marketplace/products/{id}/ - Soft delete product (staff)
+
+    **Filtering:**
+    - category: Filter by product category
+
+    **Permissions:**
+    - list/retrieve: Any authenticated user
+    - create/update/delete: sales, leads, managers, site_engineer
+    """
     serializer_class = ProductSerializer
 
     def get_queryset(self):
@@ -51,13 +90,53 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
 
 
-@method_decorator(name='list', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='retrieve', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='create', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='update', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='partial_update', decorator=swagger_auto_schema(tags=['Marketplace']))
-@method_decorator(name='destroy', decorator=swagger_auto_schema(tags=['Marketplace']))
+@method_decorator(name='list', decorator=swagger_auto_schema(
+    tags=['Marketplace - Orders'],
+    operation_description='List orders visible to the current user role.'
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    tags=['Marketplace - Orders'],
+    operation_description='Get detailed order information by ID.'
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    tags=['Marketplace - Orders'],
+    operation_description='Create a marketplace order with one or more order items.'
+))
+@method_decorator(name='update', decorator=swagger_auto_schema(
+    tags=['Marketplace - Orders'],
+    operation_description='Replace an order (typically staff workflow).'
+))
+@method_decorator(name='partial_update', decorator=swagger_auto_schema(
+    tags=['Marketplace - Orders'],
+    operation_description='Update order status or editable fields based on role rules.'
+))
+@method_decorator(name='destroy', decorator=swagger_auto_schema(
+    tags=['Marketplace - Orders'],
+    operation_description='Delete an order record if permitted.'
+))
 class OrderViewSet(viewsets.ModelViewSet):
+    """Marketplace order lifecycle management.
+
+    Audience: Both
+
+    Supports order creation, stock reservation, status transitions, cancellation, and refund bookkeeping.
+
+    **Available Actions:**
+    - GET /marketplace/orders/ - List orders
+    - GET /marketplace/orders/{id}/ - Retrieve order
+    - POST /marketplace/orders/ - Place order
+    - PATCH /marketplace/orders/{id}/ - Update order/status
+
+    **Key Behaviors:**
+    - Stock is decremented atomically at order placement
+    - Customer cancellation restores stock
+    - Completed debit transaction is marked refunded on cancellation
+    - Refund credit transaction is created automatically
+
+    **Role Rules:**
+    - Customers: Can view own orders and cancel allowed statuses
+    - Staff: Can view all orders and move fulfillment statuses
+    """
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
 

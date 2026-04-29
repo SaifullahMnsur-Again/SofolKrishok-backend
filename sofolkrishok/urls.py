@@ -36,7 +36,17 @@ schema_view = get_schema_view(
     openapi.Info(
         title="SofolKrishok API",
         default_version='v1',
-        description="Unified API docs for auth, farming, AI, marketplace, consultation, and finance modules.",
+        description=(
+            "Unified API docs for auth, farming, AI, marketplace, consultation, and finance modules.\n\n"
+            "Authentication in Swagger:\n"
+            "1. Call /auth/login/ to obtain access + refresh tokens.\n"
+            "2. Click Authorize and set Bearer token as: Bearer <access_token>.\n"
+            "3. For /auth/token/refresh/, send refresh token in request body as {\"refresh\": \"...\"}.\n\n"
+            "Audience labels used in endpoint docs:\n"
+            "- Audience: Farmer\n"
+            "- Audience: Staff\n"
+            "- Audience: Both"
+        ),
     ),
     public=True,
     permission_classes=[permissions.AllowAny],
