@@ -28,13 +28,9 @@ ALLOWED_HOSTS = comma_separated_list(env.str('ALLOWED_HOSTS', default='localhost
 if DEBUG and 'testserver' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('testserver')
 
-# FORCE_SCRIPT_NAME: Used ONLY in production with reverse proxy
-# In development (DEBUG=True): Set to None so routes work at /, /auth/, /admin/, etc.
-# In production (DEBUG=False): Set to /api so reverse proxy can route correctly
-if DEBUG:
-    FORCE_SCRIPT_NAME = None
-else:
-    FORCE_SCRIPT_NAME = env.str('FORCE_SCRIPT_NAME', default=None)
+# FORCE_SCRIPT_NAME: Reverse proxy handles /api/ path-based routing (not SCRIPT_NAME rewriting)
+# Always keep as None so Django treats paths naturally
+FORCE_SCRIPT_NAME = None
 
 # Application definition
 INSTALLED_APPS = [
@@ -132,7 +128,9 @@ USE_I18N = True
 USE_TZ = True
 
 # Static files
-STATIC_URL = '/api/static/'
+# DEBUG: Serve at /static/ (dev server, no reverse proxy)
+# PRODUCTION: Serve at /api/static/ (reverse proxy routes /api/* to backend)
+STATIC_URL = '/static/' if DEBUG else '/api/static/'
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 

@@ -60,9 +60,8 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    # MEDIA_URL is '/api/media/' for production (behind reverse proxy).
-    # In local dev Django runs without the /api prefix, so we also
-    # register the bare /media/ path so Vite's proxy (/api → localhost:8000)
-    # can serve media files correctly.
+    # Serve both static and media files directly in debug mode
+    # STATIC_URL = '/static/' in DEBUG, so register pattern for '/static/'
+    urlpatterns += static('/static/', document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static('/media/', document_root=settings.MEDIA_ROOT)
