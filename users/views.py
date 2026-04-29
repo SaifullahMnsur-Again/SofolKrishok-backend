@@ -2,6 +2,7 @@ from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils.decorators import method_decorator
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -42,12 +43,75 @@ class RegisterView(generics.CreateAPIView):
 @method_decorator(name='put', decorator=swagger_auto_schema(tags=['Auth']))
 @method_decorator(name='patch', decorator=swagger_auto_schema(tags=['Auth']))
 class ProfileView(generics.RetrieveUpdateAPIView):
-    """GET/PUT /api/auth/profile/ — View or update current user profile."""
+    """GET/PUT/PATCH /api/auth/profile/ — View or update current user profile."""
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
         return self.request.user
+
+
+class AvatarView(APIView):
+    """
+    POST  /api/auth/avatar/ — Upload or replace avatar image.
+    DELETE /api/auth/avatar/ — Remove avatar (set to null).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @swagger_auto_schema(tags=['Auth'])
+    def post(self, request):
+        file = request.FILES.get('avatar')
+        if not file:
+            return Response({'detail': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        # Delete old avatar file from disk if it exists
+        if user.avatar:
+            try:
+                user.avatar.delete(save=False)
+            except Exception:
+                pass
+        user.avatar = file
+        user.save(update_fields=['avatar'])
+        serializer = UserProfileSerializer(user, context={'request': request})
+        return Response(serializer.data)
+
+    @swagger_auto_schema(tags=['Auth'])
+    def delete(self, request):
+        user = request.user
+        if user.avatar:
+            try:
+                user.avatar.delete(save=False)
+            except Exception:
+                pass
+            user.avatar = None
+            user.save(update_fields=['avatar'])
+        serializer = UserProfileSerializer(user, context={'request': request})
+        return Response(serializer.data)
+
+
+class ChangePasswordView(APIView):
+    """POST /api/auth/change-password/ — Change the authenticated user's password."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(tags=['Auth'])
+    def post(self, request):
+        current = request.data.get('current_password', '')
+        new_pw = request.data.get('new_password', '')
+        confirm_pw = request.data.get('confirm_password', '')
+
+        if not request.user.check_password(current):
+            return Response({'detail': 'Current password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(new_pw) < 6:
+            return Response({'detail': 'New password must be at least 6 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+        if new_pw != confirm_pw:
+            return Response({'detail': 'New passwords do not match.'}, status=status.HTTP_400_BAD_REQUEST)
+        if new_pw == current:
+            return Response({'detail': 'New password must differ from current password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        request.user.set_password(new_pw)
+        request.user.save(update_fields=['password'])
+        return Response({'detail': 'Password changed successfully.'})
 
 
 @method_decorator(name='get', decorator=swagger_auto_schema(tags=['Auth']))

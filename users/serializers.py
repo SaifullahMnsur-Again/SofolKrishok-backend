@@ -46,6 +46,17 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    avatar_url = serializers.SerializerMethodField()
+
+    def get_avatar_url(self, obj):
+        request = self.context.get('request')
+        if obj.avatar and hasattr(obj.avatar, 'url'):
+            url = obj.avatar.url
+            if request:
+                return request.build_absolute_uri(url)
+            return url
+        return None
+
     def validate_expert_tags(self, value):
         return normalize_comma_tags(value)
 
@@ -53,13 +64,25 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'role', 'phone', 'address', 'avatar', 'preferred_language', 'zone', 'expert_tags', 'is_active',
+            'role', 'phone', 'address', 'avatar', 'avatar_url', 'preferred_language',
+            'zone', 'expert_tags', 'is_active',
             'date_joined', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'username', 'role', 'date_joined', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'username', 'role', 'date_joined', 'created_at', 'updated_at', 'avatar_url']
 
 
 class UserListSerializer(serializers.ModelSerializer):
+    avatar_url = serializers.SerializerMethodField()
+
+    def get_avatar_url(self, obj):
+        request = self.context.get('request')
+        if obj.avatar and hasattr(obj.avatar, 'url'):
+            url = obj.avatar.url
+            if request:
+                return request.build_absolute_uri(url)
+            return url
+        return None
+
     def validate_expert_tags(self, value):
         return normalize_comma_tags(value)
 
@@ -67,7 +90,7 @@ class UserListSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'role', 'avatar', 'phone', 'zone', 'expert_tags', 'is_active', 'date_joined',
+            'role', 'avatar', 'avatar_url', 'phone', 'zone', 'expert_tags', 'is_active', 'date_joined',
         ]
 
 from .models import AuditLog, Notification
