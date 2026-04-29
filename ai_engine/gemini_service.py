@@ -79,7 +79,7 @@ def _generate_with_resilience(client, *, contents, config=None):
                     model=model,
                     contents=contents,
                     config=config,
-                )
+                ), model
             except Exception as e:
                 last_error = e
                 error_text = str(e).lower()
@@ -256,7 +256,8 @@ def chat_with_gemini(
     session: ChatSession,
     user_message: str,
     extra_context: Optional[dict] = None,
-) -> str:
+    return_metadata: bool = False,
+) -> str | dict:
     """
     Send a message to Gemini with full conversation history (memory).
     
@@ -295,7 +296,7 @@ def chat_with_gemini(
         client = get_gemini_client()
 
         # 3. Send to Gemini with full context and resilient retries/fallbacks
-        response = _generate_with_resilience(
+        response, model_used = _generate_with_resilience(
             client,
             contents=[
                 *history,
@@ -349,7 +350,7 @@ def chat_with_gemini(
     if session.message_count <= 2 and session.title == "New Chat":
         # Auto-generate a title from the first message
         try:
-            title_response = _generate_with_resilience(
+            title_response, _ = _generate_with_resilience(
                 client,
                 contents=f"Generate a short title (max 6 words) for a farming conversation that starts with: '{user_message[:100]}'. Return ONLY the title, nothing else.",
             )
@@ -363,6 +364,13 @@ def chat_with_gemini(
     if session.message_count > threshold and not session.summary:
         # Generate summary in the background (could be Celery task later)
         generate_conversation_summary(session)
+
+    if return_metadata:
+        return {
+            'response': assistant_response,
+            'model_used': model_used,
+            'history_length': len(history),
+        }
 
     return assistant_response
 

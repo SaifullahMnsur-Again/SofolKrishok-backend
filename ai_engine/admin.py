@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import (
     AIModelArtifact,
+    AIModelUsageHistory,
     AIServiceConfiguration,
     ChatSession,
     ChatMessage,
@@ -43,6 +44,53 @@ class AIModelArtifactAdmin(admin.ModelAdmin):
     list_filter = ('operation', 'crop_type', 'is_active')
     search_fields = ('display_name', 'notes', 'created_by__username')
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(AIModelUsageHistory)
+class AIModelUsageHistoryAdmin(admin.ModelAdmin):
+    list_display = (
+        'created_at',
+        'service_name',
+        'operation',
+        'model_identifier',
+        'user',
+        'user_role',
+        'subscription_plan_name',
+        'success',
+    )
+    list_filter = (
+        'service_name',
+        'operation',
+        'user_role',
+        'subscription_plan_type',
+        'subscription_status',
+        'success',
+        'created_at',
+    )
+    search_fields = ('model_identifier', 'model_artifact__display_name', 'user__username', 'request_path')
+    readonly_fields = (
+        'created_at',
+        'user',
+        'subscription',
+        'model_artifact',
+        'service_name',
+        'operation',
+        'model_identifier',
+        'model_version',
+        'request_path',
+        'user_role',
+        'subscription_plan_name',
+        'subscription_plan_type',
+        'subscription_status',
+        'request_metadata',
+        'response_metadata',
+        'confidence',
+        'success',
+        'error_message',
+        'response_time_ms',
+        'ip_address',
+        'user_agent',
+    )
 
 
 @admin.register(AIServiceConfiguration)

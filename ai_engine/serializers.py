@@ -5,6 +5,7 @@ from django.utils.text import slugify
 from rest_framework import serializers
 from .models import (
     AIModelArtifact,
+    AIModelUsageHistory,
     Crop,
     AIServiceConfiguration,
     ChatSession,
@@ -100,6 +101,44 @@ class SoilClassificationLogSerializer(serializers.ModelSerializer):
         model = SoilClassificationLog
         fields = '__all__'
         read_only_fields = ['id', 'user', 'created_at']
+
+
+class AIModelUsageHistorySerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    model_display_name = serializers.CharField(source='model_artifact.display_name', read_only=True)
+    crop_type = serializers.CharField(source='model_artifact.crop_type', read_only=True)
+    model_operation = serializers.CharField(source='model_artifact.operation', read_only=True)
+
+    class Meta:
+        model = AIModelUsageHistory
+        fields = [
+            'id',
+            'service_name',
+            'operation',
+            'model_identifier',
+            'model_version',
+            'model_display_name',
+            'crop_type',
+            'model_operation',
+            'username',
+            'user_email',
+            'user_role',
+            'subscription_plan_name',
+            'subscription_plan_type',
+            'subscription_status',
+            'request_path',
+            'request_metadata',
+            'response_metadata',
+            'confidence',
+            'success',
+            'error_message',
+            'response_time_ms',
+            'ip_address',
+            'user_agent',
+            'created_at',
+        ]
+        read_only_fields = fields
 
 
 class AIModelArtifactSerializer(serializers.ModelSerializer):

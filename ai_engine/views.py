@@ -11,7 +11,7 @@ from django.utils.decorators import method_decorator
 from drf_yasg.utils import swagger_auto_schema
 
 from .models import ChatSession, ChatMessage, DiseaseDetectionLog, SoilClassificationLog
-from .models import AIModelArtifact, AIServiceConfiguration, Crop
+from .models import AIModelArtifact, AIServiceConfiguration, Crop, AIModelUsageHistory
 from .serializers import (
     ChatSessionSerializer,
     ChatSessionDetailSerializer,
@@ -21,6 +21,7 @@ from .serializers import (
     DiseaseDetectionLogSerializer,
     SoilClassificationSerializer,
     SoilClassificationLogSerializer,
+    AIModelUsageHistorySerializer,
     VoiceCommandSerializer,
     WeatherForecastSerializer,
     AIModelArtifactSerializer,
@@ -31,6 +32,7 @@ from .permissions import IsAIModelManager
 from .gemini_service import chat_with_gemini
 from .whisper_service import transcribe_bangla_audio
 from .weather_service import get_weather_forecast
+from .usage_history import record_model_usage
 from users.models import Notification
 
 logger = logging.getLogger(__name__)
@@ -94,6 +96,145 @@ class AIModelArtifactViewSet(viewsets.ModelViewSet):
         # to deactivate other models with the same operation+crop_type scope.
         artifact.save()
         return Response(self.get_serializer(artifact).data)
+
+
+class AIModelUsageHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = AIModelUsageHistorySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
+
+    def get_queryset(self):
+        queryset = (
+            AIModelUsageHistory.objects.all()
+            .select_related('user', 'subscription__plan', 'model_artifact')
+        )
+        params = getattr(self.request, 'query_params', {})
+
+        operation = params.get('operation')
+        service_name = params.get('service_name')
+        model_identifier = params.get('model_identifier')
+        user_role = params.get('user_role')
+        subscription_plan_name = params.get('subscription_plan_name')
+        subscription_plan_type = params.get('subscription_plan_type')
+        subscription_status = params.get('subscription_status')
+        success = params.get('success')
+        user_id = params.get('user_id')
+        model_id = params.get('model_id')
+        crop_type = params.get('crop_type')
+        start = params.get('start')
+        end = params.get('end')
+        condition = params.get('condition')
+
+        if operation:
+            queryset = queryset.filter(operation=operation)
+        if service_name:
+            queryset = queryset.filter(service_name=service_name)
+        if model_identifier:
+            queryset = queryset.filter(model_identifier__icontains=model_identifier)
+        if user_role:
+            queryset = queryset.filter(user_role=user_role)
+        if subscription_plan_name:
+            queryset = queryset.filter(subscription_plan_name__icontains=subscription_plan_name)
+        if subscription_plan_type:
+            queryset = queryset.filter(subscription_plan_type=subscription_plan_type)
+        if subscription_status:
+            queryset = queryset.filter(subscription_status=subscription_status)
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        if model_id:
+            queryset = queryset.filter(model_artifact_id=model_id)
+        if crop_type:
+            queryset = queryset.filter(model_artifact__crop_type=crop_type)
+        if success in {'true', 'True', '1'}:
+            queryset = queryset.filter(success=True)
+        elif success in {'false', 'False', '0'}:
+            queryset = queryset.filter(success=False)
+        if start:
+            queryset = queryset.filter(created_at__gte=start)
+        if end:
+            queryset = queryset.filter(created_at__lte=end)
+
+        if condition == 'today':
+            today = timezone.localdate()
+            queryset = queryset.filter(created_at__date=today)
+        elif condition == 'this_week':
+            queryset = queryset.filter(created_at__gte=timezone.now() - timedelta(days=7))
+        elif condition == 'this_month':
+            queryset = queryset.filter(created_at__gte=timezone.now() - timedelta(days=30))
+        elif condition == 'high_confidence':
+            queryset = queryset.filter(confidence__gte=90)
+        elif condition == 'training_ready':
+            queryset = queryset.filter(success=True).exclude(response_metadata={})
+        elif condition == 'errors':
+            queryset = queryset.filter(success=False)
+
+        return queryset.order_by('-created_at')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+
+        summary_qs = queryset
+        summary = {
+            'total': summary_qs.count(),
+            'successful': summary_qs.filter(success=True).count(),
+            'failed': summary_qs.filter(success=False).count(),
+        }
+
+        if page is not None:
+            response = self.get_paginated_response(serializer.data)
+            response.data['summary'] = summary
+            return response
+
+        return Response({'count': summary['total'], 'summary': summary, 'results': serializer.data})
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        from django.db.models import Count, Avg
+        from django.db.models.functions import TruncDate
+
+        def serialize_top(items, key):
+            return [
+                {key: item[key], 'count': item['count']}
+                for item in items
+            ]
+
+        daily_usage = []
+        for item in (
+            queryset.annotate(day=TruncDate('created_at'))
+            .values('day')
+            .annotate(count=Count('id'))
+            .order_by('day')
+        ):
+            daily_usage.append({
+                'date': item['day'].isoformat() if item.get('day') else None,
+                'count': item['count'],
+            })
+
+        return Response({
+            'total': queryset.count(),
+            'successful': queryset.filter(success=True).count(),
+            'failed': queryset.filter(success=False).count(),
+            'by_service': serialize_top(
+                list(queryset.values('service_name').annotate(count=Count('id')).order_by('-count')[:10]),
+                'service_name',
+            ),
+            'by_model': serialize_top(
+                list(queryset.values('model_identifier').annotate(count=Count('id')).order_by('-count')[:10]),
+                'model_identifier',
+            ),
+            'by_role': serialize_top(
+                list(queryset.values('user_role').annotate(count=Count('id')).order_by('-count')[:10]),
+                'user_role',
+            ),
+            'by_subscription_plan': serialize_top(
+                list(queryset.values('subscription_plan_name').annotate(count=Count('id')).order_by('-count')[:10]),
+                'subscription_plan_name',
+            ),
+            'daily_usage': daily_usage[-14:],
+            'avg_confidence': queryset.exclude(confidence__isnull=True).aggregate(avg=Avg('confidence')).get('avg'),
+        })
 
 
 class GeminiConfigurationView(APIView):
@@ -306,12 +447,47 @@ class GeminiChatView(APIView):
 
         # Call Gemini with full memory context
         try:
-            response_text = chat_with_gemini(session, message)
+            chat_result = chat_with_gemini(session, message, return_metadata=True)
         except ValueError as e:
+            record_model_usage(
+                user=user,
+                service_name=AIModelUsageHistory.Service.GEMINI_CHAT,
+                operation='gemini_chat',
+                model_identifier=getattr(settings, 'GEMINI_MODEL', '') or AIServiceConfiguration.get_solo().gemini_model or 'gemini-chat',
+                request_path=request.path,
+                request_metadata={
+                    'session_id': session_id,
+                    'land_id': land_id,
+                    'message_length': len(message),
+                },
+                success=False,
+                error_message=str(e),
+                request=request,
+            )
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+
+        response_text = chat_result['response']
+        model_used = chat_result.get('model_used', '')
+        record_model_usage(
+            user=user,
+            service_name=AIModelUsageHistory.Service.GEMINI_CHAT,
+            operation='gemini_chat',
+            model_identifier=model_used,
+            model_version=model_used,
+            request_path=request.path,
+            request_metadata={
+                'session_id': session.id,
+                'land_id': land_id,
+                'message_length': len(message),
+            },
+            response_metadata={
+                'message_count': session.message_count,
+            },
+            request=request,
+        )
 
         # Refresh session from DB (title may have been auto-updated)
         session.refresh_from_db()
@@ -351,14 +527,42 @@ class DiseaseDetectView(APIView):
 
         try:
             from .disease_service import detect_disease
+            from .disease_service import resolve_active_disease_artifact
+            artifact = resolve_active_disease_artifact(crop_type)
             result = detect_disease(image, crop_type)
         except FileNotFoundError as e:
+            record_model_usage(
+                user=request.user,
+                service_name=AIModelUsageHistory.Service.DISEASE_DETECTION,
+                operation='disease_detection',
+                model_artifact=artifact if 'artifact' in locals() else None,
+                model_identifier=(artifact.display_name if 'artifact' in locals() and artifact else f'disease:{crop_type}'),
+                model_version=getattr(artifact, 'version', '') if 'artifact' in locals() and artifact else '',
+                request_path=request.path,
+                request_metadata={'crop_type': crop_type, 'image_name': getattr(image, 'name', '')},
+                success=False,
+                error_message=str(e),
+                request=request,
+            )
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except Exception as e:
             logger.error(f"Disease detection error: {e}")
+            record_model_usage(
+                user=request.user,
+                service_name=AIModelUsageHistory.Service.DISEASE_DETECTION,
+                operation='disease_detection',
+                model_artifact=artifact if 'artifact' in locals() else None,
+                model_identifier=(artifact.display_name if 'artifact' in locals() and artifact else f'disease:{crop_type}'),
+                model_version=getattr(artifact, 'version', '') if 'artifact' in locals() and artifact else '',
+                request_path=request.path,
+                request_metadata={'crop_type': crop_type, 'image_name': getattr(image, 'name', '')},
+                success=False,
+                error_message=str(e),
+                request=request,
+            )
             return Response(
                 {'error': 'Disease detection failed. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -372,6 +576,25 @@ class DiseaseDetectView(APIView):
             predicted_class=result['predicted_class'],
             confidence=result['confidence'],
             all_predictions=result['all_predictions'],
+        )
+
+        record_model_usage(
+            user=request.user,
+            service_name=AIModelUsageHistory.Service.DISEASE_DETECTION,
+            operation='disease_detection',
+            model_artifact=artifact if 'artifact' in locals() else None,
+            model_identifier=(artifact.display_name if 'artifact' in locals() and artifact else f'disease:{crop_type}'),
+            model_version=getattr(artifact, 'version', '') if 'artifact' in locals() and artifact else '',
+            request_path=request.path,
+            request_metadata={'crop_type': crop_type, 'image_name': getattr(image, 'name', '')},
+            response_metadata={
+                'log_id': log.id,
+                'predicted_class': result['predicted_class'],
+                'is_healthy': result.get('is_healthy'),
+                'top_prediction': result['all_predictions'],
+            },
+            confidence=result.get('confidence'),
+            request=request,
         )
 
         return Response({
@@ -410,14 +633,42 @@ class SoilClassifyView(APIView):
 
         try:
             from .soil_service import classify_soil
+            from .soil_service import resolve_active_soil_artifact
+            artifact = resolve_active_soil_artifact()
             result = classify_soil(image)
         except FileNotFoundError as e:
+            record_model_usage(
+                user=request.user,
+                service_name=AIModelUsageHistory.Service.SOIL_CLASSIFICATION,
+                operation='soil_classification',
+                model_artifact=artifact if 'artifact' in locals() else None,
+                model_identifier=(artifact.display_name if 'artifact' in locals() and artifact else 'soil-classifier'),
+                model_version=getattr(artifact, 'version', '') if 'artifact' in locals() and artifact else '',
+                request_path=request.path,
+                request_metadata={'land_id': land_id, 'image_name': getattr(image, 'name', '')},
+                success=False,
+                error_message=str(e),
+                request=request,
+            )
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except Exception as e:
             logger.error(f"Soil classification error: {e}")
+            record_model_usage(
+                user=request.user,
+                service_name=AIModelUsageHistory.Service.SOIL_CLASSIFICATION,
+                operation='soil_classification',
+                model_artifact=artifact if 'artifact' in locals() else None,
+                model_identifier=(artifact.display_name if 'artifact' in locals() and artifact else 'soil-classifier'),
+                model_version=getattr(artifact, 'version', '') if 'artifact' in locals() and artifact else '',
+                request_path=request.path,
+                request_metadata={'land_id': land_id, 'image_name': getattr(image, 'name', '')},
+                success=False,
+                error_message=str(e),
+                request=request,
+            )
             return Response(
                 {'error': 'Soil classification failed. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -442,6 +693,24 @@ class SoilClassifyView(APIView):
             confidence=result['confidence'],
             all_predictions=result['all_predictions'],
             land_parcel=land_parcel,
+        )
+
+        record_model_usage(
+            user=request.user,
+            service_name=AIModelUsageHistory.Service.SOIL_CLASSIFICATION,
+            operation='soil_classification',
+            model_artifact=artifact if 'artifact' in locals() else None,
+            model_identifier=(artifact.display_name if 'artifact' in locals() and artifact else 'soil-classifier'),
+            model_version=getattr(artifact, 'version', '') if 'artifact' in locals() and artifact else '',
+            request_path=request.path,
+            request_metadata={'land_id': land_id, 'image_name': getattr(image, 'name', '')},
+            response_metadata={
+                'log_id': log.id,
+                'predicted_type': result['predicted_type'],
+                'land_updated': land_parcel is not None,
+            },
+            confidence=result.get('confidence'),
+            request=request,
         )
 
         return Response({

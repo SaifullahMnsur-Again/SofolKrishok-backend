@@ -234,6 +234,69 @@ class AIModelArtifact(models.Model):
         return f"{self.display_name} - {self.get_operation_display()}{suffix} [{state}]"
 
 
+class AIModelUsageHistory(models.Model):
+    class Service(models.TextChoices):
+        DISEASE_DETECTION = 'disease_detection', 'Disease Detection'
+        SOIL_CLASSIFICATION = 'soil_classification', 'Soil Classification'
+        GEMINI_CHAT = 'gemini_chat', 'Gemini Chat'
+        VOICE_COMMAND = 'voice_command', 'Voice Command'
+        WEATHER_FORECAST = 'weather_forecast', 'Weather Forecast'
+        OTHER = 'other', 'Other'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='model_usage_history',
+    )
+    subscription = models.ForeignKey(
+        'finance.Subscription',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='model_usage_history',
+    )
+    model_artifact = models.ForeignKey(
+        AIModelArtifact,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='usage_history',
+    )
+    service_name = models.CharField(max_length=50, choices=Service.choices)
+    operation = models.CharField(max_length=32, blank=True)
+    model_identifier = models.CharField(max_length=255, blank=True)
+    model_version = models.CharField(max_length=64, blank=True)
+    request_path = models.CharField(max_length=255, blank=True)
+    user_role = models.CharField(max_length=30, blank=True)
+    subscription_plan_name = models.CharField(max_length=100, blank=True)
+    subscription_plan_type = models.CharField(max_length=20, blank=True)
+    subscription_status = models.CharField(max_length=20, blank=True)
+    request_metadata = models.JSONField(default=dict, blank=True)
+    response_metadata = models.JSONField(default=dict, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True)
+    response_time_ms = models.PositiveIntegerField(null=True, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ai_model_usage_history'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['service_name', '-created_at']),
+            models.Index(fields=['operation', '-created_at']),
+            models.Index(fields=['user_role', '-created_at']),
+        ]
+
+    def __str__(self):
+        model_name = self.model_identifier or (self.model_artifact.display_name if self.model_artifact else 'unknown')
+        return f"{self.get_service_name_display()} — {model_name} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
 class AIServiceConfiguration(models.Model):
     """Singleton store for AI service settings such as the Gemini API key."""
 

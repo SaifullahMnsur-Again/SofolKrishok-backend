@@ -144,6 +144,31 @@ def _load_model(crop_type: str):
     return model, reversed_indices
 
 
+def resolve_active_disease_artifact(crop_type: str):
+    crop_type = (crop_type or '').strip()
+    artifact = (
+        AIModelArtifact.objects.filter(
+            operation=AIModelArtifact.Operation.DISEASE_DETECTION,
+            crop_type__iexact=crop_type,
+            is_active=True,
+        )
+        .order_by('-updated_at', '-created_at')
+        .first()
+    )
+
+    if not artifact:
+        artifact = (
+            AIModelArtifact.objects.filter(
+                operation=AIModelArtifact.Operation.DISEASE_DETECTION,
+                crop_type__iexact=crop_type,
+            )
+            .order_by('-is_active', '-updated_at', '-created_at')
+            .first()
+        )
+
+    return artifact
+
+
 def preprocess_image(image_file) -> np.ndarray:
     """
     Preprocess an uploaded image file for model inference.

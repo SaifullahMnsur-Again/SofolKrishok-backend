@@ -4,6 +4,7 @@ from . import views
 
 router = DefaultRouter()
 router.register('models', views.AIModelArtifactViewSet, basename='ai-models')
+router.register('model-usage', views.AIModelUsageHistoryViewSet, basename='ai-model-usage')
 router.register('crops', views.CropViewSet, basename='ai-crops')
 
 urlpatterns = [

@@ -95,6 +95,17 @@ def _load_model():
     return _soil_model
 
 
+def resolve_active_soil_artifact():
+    return (
+        AIModelArtifact.objects.filter(
+            operation=AIModelArtifact.Operation.SOIL_CLASSIFICATION,
+            is_active=True,
+        )
+        .order_by('-updated_at', '-created_at')
+        .first()
+    )
+
+
 def preprocess_image(image_file) -> np.ndarray:
     """Preprocess an uploaded image for soil classification."""
     img = Image.open(image_file).convert('RGB')

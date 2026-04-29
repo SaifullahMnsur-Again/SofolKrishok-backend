@@ -241,6 +241,7 @@ JAZZMIN_SETTINGS = {
         "lms_farming.LandParcel": "fas fa-map-marked-alt",
         "lms_farming.CropTrack": "fas fa-seedling",
         "ai_engine.ChatSession": "fas fa-comments",
+        "ai_engine.AIModelUsageHistory": "fas fa-chart-line",
         "marketplace.Product": "fas fa-shopping-cart",
         "consultation.ConsultationSlot": "fas fa-stethoscope",
         "finance.Transaction": "fas fa-wallet",
