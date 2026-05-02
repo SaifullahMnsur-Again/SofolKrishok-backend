@@ -6,6 +6,7 @@ import os
 import environ
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,10 +24,22 @@ env = environ.Env(
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 SECRET_KEY = env.str('SECRET_KEY', default='django-insecure-change-me-in-production')
-DEBUG = env.bool('DEBUG', default=True)
-ALLOWED_HOSTS = comma_separated_list(env.str('ALLOWED_HOSTS', default='localhost,127.0.0.1,testserver'))
-if DEBUG and 'testserver' not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append('testserver')
+
+
+load_dotenv()
+
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', default='localhost,127.0.0.1,testserver').split(',')
+
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year in seconds
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True 
+    # ALLOWED_HOSTS.append('testserver')
 
 # FORCE_SCRIPT_NAME: Reverse proxy handles /api/ path-based routing (not SCRIPT_NAME rewriting)
 # Always keep as None so Django treats paths naturally
@@ -187,21 +200,24 @@ SIMPLE_JWT = {
 # ============================================
 # CORS Configuration
 # ============================================
-FRONTEND_URL = env.str('FRONTEND_URL', default='http://localhost:5173')
-CORS_ALLOWED_ORIGINS = [
-    FRONTEND_URL,
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:5174',
-]
-CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = comma_separated_list(
-    env.str(
-        'CSRF_TRUSTED_ORIGINS',
-        default=f'{FRONTEND_URL},http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174',
-    )
-)
+# FRONTEND_URL = env.str('FRONTEND_URL', default='http://localhost:5173')
+# CORS_ALLOWED_ORIGINS = [
+#     FRONTEND_URL,
+#     'http://localhost:5173',
+#     'http://localhost:5174',
+#     'http://127.0.0.1:5173',
+#     'http://127.0.0.1:5174',
+# ]
+
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+
+# CORS_ALLOW_CREDENTIALS = True
+# CSRF_TRUSTED_ORIGINS = comma_separated_list(
+#     env.str(
+#         'CSRF_TRUSTED_ORIGINS',
+#         default=f'{FRONTEND_URL},http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174',
+#     )
+# )
 
 # Security / proxy settings for hosted deployment
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -210,8 +226,8 @@ USE_X_FORWARDED_HOST = True
 # ============================================
 # AI Model Configuration
 # ============================================
-DISEASE_MODEL_DIR = env.str('DISEASE_MODEL_DIR', default=str(BASE_DIR / 'ml_models' / 'disease_detection'))
-SOIL_MODEL_PATH = env.str('SOIL_MODEL_PATH', default=str(BASE_DIR / 'ml_models' / 'soil_classification' / 'soil_type_model.h5'))
+# Models are uploaded and managed via admin dashboard
+# No local model paths required
 
 # Gemini AI
 GEMINI_API_KEY = env.str('GEMINI_API_KEY', default='')
