@@ -67,6 +67,19 @@ urlpatterns = [
     # API documentation (reduced to only necessary endpoints)
     re_path(r'^schema\.json$', schema_view.without_ui(cache_timeout=0), name='api-schema-json'),
     path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='api-schema-swagger-ui'),
+
+    # --- 2. Parallel Testing Path Wrapper (sofolkrishok.saifullahmnsur.dev/api/v1/) ---
+    path('api/v1/', include([
+        path('', api_root, name='api-root-v1'),
+        path('auth/', include('users.urls')),
+        path('farming/', include('lms_farming.urls')),
+        path('ai/', include('ai_engine.urls')),
+        path('marketplace/', include('marketplace.urls')),
+        path('consultation/', include('consultation.urls')),
+        path('finance/', include('finance.urls')),
+        re_path(r'^schema\.json$', schema_view.without_ui(cache_timeout=0), name='api-schema-json-v1'),
+        path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='api-schema-swagger-ui-v1'),
+    ])),
 ]
 
 if settings.DEBUG:
