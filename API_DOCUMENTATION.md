@@ -260,20 +260,7 @@ API for interacting with generative AI, computer vision models, and natural lang
   }
   ```
 
-### 3.5 Voice Commands
-- **POST** `/ai/voice-command/`
-- **Purpose:** Parse natural language voice text into actionable UI intents.
-- **Request Body:** `{ "text": "show me my pending orders" }`
-- **Response:** `200 OK`
-  ```json
-  {
-    "intent": "NAVIGATE",
-    "target": "/orders?status=pending",
-    "confidence": 0.98
-  }
-  ```
-
-### 3.6 AI Models Management (Staff Only)
+### 3.5 AI Models Management (Staff Only)
 - **GET/POST** `/ai/models/` - List or upload new ML model artifacts (`.tflite`, `.h5`).
 - **PATCH** `/ai/models/{id}/` - Partially update an existing model artifact (e.g., change its name, active status, or replace file).
 - **POST** `/ai/models/{id}/activate/` - Set a model as the active version for its crop and operation.

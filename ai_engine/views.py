@@ -22,7 +22,6 @@ from .serializers import (
     SoilClassificationSerializer,
     SoilClassificationLogSerializer,
     AIModelUsageHistorySerializer,
-    VoiceCommandSerializer,
     WeatherForecastSerializer,
     AIModelArtifactSerializer,
     AIModelArtifactSerializer,
@@ -31,7 +30,6 @@ from .serializers import (
 )
 from .permissions import IsAIModelManager
 from .gemini_service import chat_with_gemini
-from .whisper_service import transcribe_bangla_audio
 from .weather_service import get_weather_forecast
 from .usage_history import record_model_usage
 from users.models import Notification
@@ -973,127 +971,6 @@ class SoilClassificationFeedbackView(APIView):
 
 
 # ============================================
-# Voice Command Execution (NLP Intent Mapping)
-# ============================================
-
-class VoiceCommandView(APIView):
-    """Voice command processing and navigation intent recognition.
-
-    Audience: Both
-    
-    Process voice or text commands to extract user intent and navigate to relevant app sections. Supports Bangla speech transcription via Whisper.
-    
-    **Endpoint:** POST /ai/voice-command/
-    
-    **Authentication:** Required (Bearer token)
-    
-    **Request Format:** multipart/form-data OR JSON
-    
-    **Request Fields (JSON):**
-    ```json
-    {
-      "text": "Show me the market"
-    }
-    ```
-    
-    **Request Fields (Multipart with Audio):**
-    - audio: Audio file (WAV/MP3, max 10MB)
-    - text: Optional text fallback if audio fails
-    
-    **Response:**
-    ```json
-    {
-      "original_text": "Show me the market",
-      "transcribed": false,
-      "intent": "NAVIGATE",
-      "target": "/marketplace",
-      "voice_response": "Okay, taking you to Marketplace."
-    }
-    ```
-    
-    **Intent Recognition Keywords:**
-    
-    | Intent | Keywords | Target |
-    |--------|----------|--------|
-    | Marketplace | market, buy, seed, shop, order | /marketplace |
-    | Weather | weather, rain, forecast, temperature | /dashboard |
-    | Chat | chat, help, assistant, talk | /chat |
-    | Billing | bill, pay, credit, subscription | /billing |
-    | Land Mgmt | land, field, parcel | /lands |
-    | Disease | disease, sick, detect, leaf | /disease-detect |
-    
-    **Response Fields:**
-    - original_text: Recognized/provided text
-    - transcribed: Whether audio was transcribed to text
-    - intent: Recognized action intent
-    - target: Navigation target URL
-    - voice_response: Audio-ready response text
-    
-    **Supported Languages:**
-    - Bengali (Bangla) - via Whisper model
-    - English - direct text processing
-    
-    **Error Responses:**
-    - 400: No text or valid audio provided
-    - 503: Whisper transcription failed
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def _resolve_intent(self, text: str):
-        text = (text or '').lower()
-        intent = "UNKNOWN"
-        target = "/dashboard"
-
-        if any(word in text for word in ['market', 'buy', 'seed', 'fertilizer', 'shop', 'order']):
-            intent = "NAVIGATE"
-            target = "/marketplace"
-        elif any(word in text for word in ['weather', 'rain', 'temperature', 'forecast']):
-            intent = "NAVIGATE"
-            target = "/dashboard"
-        elif any(word in text for word in ['chat', 'help', 'assistant', 'talk']):
-            intent = "NAVIGATE"
-            target = "/chat"
-        elif any(word in text for word in ['bill', 'pay', 'credit', 'subscription', 'finance']):
-            intent = "NAVIGATE"
-            target = "/billing"
-        elif any(word in text for word in ['land', 'field', 'parcel']):
-            intent = "NAVIGATE"
-            target = "/lands"
-        elif any(word in text for word in ['disease', 'sick', 'detect', 'leaf']):
-            intent = "NAVIGATE"
-            target = "/disease-detect"
-
-        return intent, target
-
-    @swagger_auto_schema(tags=['AI'])
-    def post(self, request):
-        serializer = VoiceCommandSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        text = (serializer.validated_data.get('text') or '').strip()
-        audio = serializer.validated_data.get('audio')
-
-        if audio and not text:
-            try:
-                text = transcribe_bangla_audio(audio)
-            except Exception as e:
-                logger.error("Whisper transcription failed: %s", e)
-                return Response(
-                    {'error': f"Speech transcription failed: {e}"},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-
-        intent, target = self._resolve_intent(text)
-
-        return Response({
-            'original_text': text,
-            'transcribed': bool(audio),
-            'intent': intent,
-            'target': target,
-            'voice_response': f"Okay, taking you to {target.replace('/', '').capitalize()}." if intent == "NAVIGATE" else "I'm sorry, I didn't catch that command.",
-        })
-
 
 class WeatherForecastView(APIView):
     """Weather forecast with risk alerts and farming recommendations.

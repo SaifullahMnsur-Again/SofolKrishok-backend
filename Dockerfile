@@ -14,8 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 1. Copy ONLY the requirements file first (Crucial for Docker caching)
 COPY requirements.txt .
 
-# 2. Install the lightweight CPU version of PyTorch first to skip CUDA overhead
-RUN pip install --no-cache-dir torch==2.12.0 --extra-index-url https://download.pytorch.org/whl/cpu
 
 # 3. Install the remaining Django and AI dependencies
 RUN pip install --no-cache-dir -r requirements.txt

@@ -190,24 +190,6 @@ class AIEngineTestCase(APITestCase):
         self.land.refresh_from_db()
         self.assertEqual(self.land.soil_type, "loamy")
 
-    def test_voice_command_nlp_intent(self):
-        """Verifies voice command intent mapping from query text."""
-        refresh = RefreshToken.for_user(self.farmer)
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
-
-        url = reverse('voice-command')
-        
-        # 1. Test Marketplace command
-        response = self.client.post(url, {"text": "Show me seeds in the shop"}, format='multipart')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["intent"], "NAVIGATE")
-        self.assertEqual(response.data["target"], "/marketplace")
-
-        # 2. Test Disease scan command
-        response = self.client.post(url, {"text": "I want to scan a sick leaf"}, format='multipart')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["intent"], "NAVIGATE")
-        self.assertEqual(response.data["target"], "/disease-detect")
 
     @patch('ai_engine.views.get_weather_forecast')
     def test_weather_forecast_and_alerts(self, mock_weather):

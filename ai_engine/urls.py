@@ -24,8 +24,6 @@ urlpatterns = [
     path('soil-classify/', views.SoilClassifyView.as_view(), name='soil-classify'),
     path('soil-classify-log/<int:pk>/feedback/', views.SoilClassificationFeedbackView.as_view(), name='soil-classify-feedback'),
 
-    # Voice Command Intent Mapping
-    path('voice-command/', views.VoiceCommandView.as_view(), name='voice-command'),
 
     # Weather forecast + alert generation
     path('weather-forecast/', views.WeatherForecastView.as_view(), name='weather-forecast'),

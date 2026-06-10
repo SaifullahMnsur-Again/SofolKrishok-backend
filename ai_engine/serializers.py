@@ -61,12 +61,6 @@ class ChatResponseSerializer(serializers.Serializer):
     message_count = serializers.IntegerField()
 
 
-class VoiceCommandSerializer(serializers.Serializer):
-    """Text or audio-powered command input."""
-    text = serializers.CharField(required=False, allow_blank=True)
-    audio = serializers.FileField(required=False)
-
-
 class WeatherForecastSerializer(serializers.Serializer):
     """Optional coordinates for weather lookup."""
     lat = serializers.FloatField(required=False)

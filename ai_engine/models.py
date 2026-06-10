@@ -260,7 +260,6 @@ class AIModelUsageHistory(models.Model):
         DISEASE_DETECTION = 'disease_detection', 'Disease Detection'
         SOIL_CLASSIFICATION = 'soil_classification', 'Soil Classification'
         GEMINI_CHAT = 'gemini_chat', 'Gemini Chat'
-        VOICE_COMMAND = 'voice_command', 'Voice Command'
         WEATHER_FORECAST = 'weather_forecast', 'Weather Forecast'
         OTHER = 'other', 'Other'
 
