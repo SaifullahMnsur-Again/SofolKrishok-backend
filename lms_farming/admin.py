@@ -1,8 +1,40 @@
 from django.contrib import admin
 from .models import (
     LandParcel, LandParcelHistory, CropTrack, CropTrackHistory, CropStage, CropActivityLog,
-    FarmingCycle, FarmingCycleHistory
+    FarmingCycle, FarmingCycleHistory, CropType
 )
+
+@admin.action(description="Merge selected into the first selected crop")
+def merge_crops(modeladmin, request, queryset):
+    crops = list(queryset)
+    if len(crops) < 2: 
+        modeladmin.message_user(request, "Please select at least two crops to merge.", level="ERROR")
+        return
+    
+    target = crops[0]
+    merged_count = 0
+    for crop in crops[1:]:
+        # Update foreign keys safely
+        LandParcel.objects.filter(default_crop=crop).update(default_crop=target)
+        CropTrack.objects.filter(crop=crop).update(crop=target)
+        from ai_engine.models import AIModelArtifact
+        AIModelArtifact.objects.filter(crop=crop).update(crop=target)
+        
+        # Mark as merged
+        crop.merged_into = target
+        crop.is_approved = False
+        crop.is_public = False
+        crop.save()
+        merged_count += 1
+        
+    modeladmin.message_user(request, f"Successfully merged {merged_count} crops into '{target.name_en}'.")
+
+@admin.register(CropType)
+class CropTypeAdmin(admin.ModelAdmin):
+    list_display = ('name_en', 'name_bn', 'is_public', 'is_approved', 'suggested_by', 'merged_into', 'created_at')
+    list_filter = ('is_public', 'is_approved', 'created_at')
+    search_fields = ('name_en', 'name_bn')
+    actions = [merge_crops]
 
 @admin.register(LandParcel)
 class LandParcelAdmin(admin.ModelAdmin):
@@ -12,9 +44,9 @@ class LandParcelAdmin(admin.ModelAdmin):
 
 @admin.register(CropTrack)
 class CropTrackAdmin(admin.ModelAdmin):
-    list_display = ('id', 'land', 'crop_name', 'season', 'status')
+    list_display = ('id', 'land', 'crop', 'season', 'status')
     list_filter = ('status', 'season')
-    search_fields = ('crop_name', 'land__name')
+    search_fields = ('crop__name_en', 'land__name')
 
 
 @admin.register(CropActivityLog)

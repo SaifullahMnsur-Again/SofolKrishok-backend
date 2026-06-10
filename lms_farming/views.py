@@ -7,7 +7,7 @@ from django.utils.decorators import method_decorator
 from drf_yasg.utils import swagger_auto_schema
 from .models import (
     LandParcel, LandParcelHistory, CropTrack, CropTrackHistory, CropStage, CropActivityLog,
-    FarmingCycle, FarmingCycleHistory
+    FarmingCycle, FarmingCycleHistory, CropType
 )
 from ai_engine.weather_service import get_weather_forecast
 from .serializers import (
@@ -20,6 +20,7 @@ from .serializers import (
     CropActivityLogSerializer,
     FarmingCycleSerializer,
     FarmingCycleHistorySerializer,
+    CropTypeSerializer,
 )
 
 
@@ -71,6 +72,35 @@ class FarmingWeatherSerializer(serializers.Serializer):
     lat = serializers.FloatField(required=False)
     lon = serializers.FloatField(required=False)
     days = serializers.IntegerField(required=False, min_value=1, max_value=7)
+
+class CropTypeViewSet(viewsets.ModelViewSet):
+    """API endpoint for retrieving and suggesting crops."""
+    queryset = CropType.objects.all()
+    serializer_class = CropTypeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Admin/Staff see all. Farmers see public crops + their own suggestions
+        from django.db.models import Q
+        user = self.request.user
+        if user.is_staff or user.role == 'admin':
+            return CropType.objects.all()
+        return CropType.objects.filter(Q(is_public=True) | Q(suggested_by=user))
+
+    def perform_create(self, serializer):
+        # Staff can create public/internal crops directly. Farmers create unapproved suggestions.
+        user = self.request.user
+        if user.is_staff or user.role == 'admin':
+            serializer.save(suggested_by=user, is_approved=True)
+        else:
+            serializer.save(suggested_by=user, is_public=False, is_approved=False)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.is_staff or user.role == 'admin':
+            serializer.save(is_approved=True, is_public=True)
+        else:
+            serializer.save()
 
 
 @method_decorator(name='list', decorator=swagger_auto_schema(
@@ -179,12 +209,20 @@ class LandParcelViewSet(viewsets.ModelViewSet):
         tracks = CropTrack.objects.filter(land=land).prefetch_related('stages', 'history_entries')
         cycle_history = CropTrackHistory.objects.filter(track__land=land).select_related('track', 'track__land')
         activity_history = CropActivityLog.objects.filter(track__land=land).select_related('track', 'track__land', 'recorded_by')
+        
+        from ai_engine.models import DiseaseDetectionLog, SoilClassificationLog
+        from ai_engine.serializers import DiseaseDetectionLogSerializer, SoilClassificationLogSerializer
+        disease_history = DiseaseDetectionLog.objects.filter(land_parcel=land).order_by('-created_at')
+        soil_history = SoilClassificationLog.objects.filter(land_parcel=land).order_by('-created_at')
+
         return Response({
             'land': LandParcelSerializer(land).data,
             'crop_history': CropTrackSerializer(tracks, many=True).data,
             'cycle_history': CropTrackHistorySerializer(cycle_history, many=True).data,
             'activity_history': CropActivityLogSerializer(activity_history, many=True).data,
             'land_history': LandParcelHistorySerializer(land.history_entries.all(), many=True).data,
+            'disease_history': DiseaseDetectionLogSerializer(disease_history, many=True).data,
+            'soil_history': SoilClassificationLogSerializer(soil_history, many=True).data,
         })
 
 
@@ -266,7 +304,7 @@ class CropTrackViewSet(viewsets.ModelViewSet):
         return {
             'land_id': track.land_id,
             'land_name': track.land.name,
-            'crop_name': track.crop_name,
+            'crop_name': track.crop.name_en if track.crop else None,
             'season': track.season,
             'status': track.status,
             'planted_date': str(track.planted_date) if track.planted_date else None,

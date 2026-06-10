@@ -6,7 +6,6 @@ from rest_framework import serializers
 from .models import (
     AIModelArtifact,
     AIModelUsageHistory,
-    Crop,
     AIServiceConfiguration,
     ChatSession,
     ChatMessage,
@@ -81,6 +80,8 @@ class DiseaseDetectionSerializer(serializers.Serializer):
     # Accept any crop_type string — validation is handled by the disease_service
     # which looks up the active AIModelArtifact from the database.
     crop_type = serializers.CharField(max_length=120)
+    land_id = serializers.IntegerField(required=False, help_text="Optional: link detection to a land parcel")
+    image_taken_at = serializers.DateTimeField(required=False, help_text="Optional: when the image was taken")
 
 
 class DiseaseDetectionLogSerializer(serializers.ModelSerializer):
@@ -94,6 +95,11 @@ class SoilClassificationSerializer(serializers.Serializer):
     """Request for soil classification."""
     image = serializers.ImageField()
     land_id = serializers.IntegerField(required=False, help_text="Optional: update this land parcel's soil type")
+    image_taken_at = serializers.DateTimeField(required=False, help_text="Optional: when the image was taken")
+
+class LogFeedbackSerializer(serializers.Serializer):
+    """Update prediction feedback for a log."""
+    prediction_feedback = serializers.ChoiceField(choices=['correct', 'incorrect', 'not_sure'])
 
 
 class SoilClassificationLogSerializer(serializers.ModelSerializer):
@@ -107,7 +113,7 @@ class AIModelUsageHistorySerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     user_email = serializers.CharField(source='user.email', read_only=True)
     model_display_name = serializers.CharField(source='model_artifact.display_name', read_only=True)
-    crop_type = serializers.CharField(source='model_artifact.crop_type', read_only=True)
+    crop_type = serializers.CharField(source='model_artifact.crop.name_en', read_only=True)
     model_operation = serializers.CharField(source='model_artifact.operation', read_only=True)
 
     class Meta:
@@ -159,10 +165,10 @@ class AIModelArtifactSerializer(serializers.ModelSerializer):
     class Meta:
         model = AIModelArtifact
         fields = [
-            'id', 'operation', 'crop_type', 'crop_name_english', 'crop_name_bengali', 'display_name', 'model_file', 'model_file_name', 'model_file_size', 'model_path',
+            'id', 'operation', 'crop', 'crop_name_english', 'crop_name_bengali', 'display_name', 'model_file', 'model_file_name', 'model_file_size', 'model_path',
             'model_name', 'version',
             'model_file_url', 'indices_file', 'indices_file_name', 'indices_file_size', 'indices_file_url',
-            'indices_path', 'total_size_bytes',
+            'indices_path', 'total_size_bytes', 'parsed_classes',
             'is_active', 'notes', 'created_by', 'created_at', 'updated_at',
         ]
         read_only_fields = [
@@ -170,17 +176,14 @@ class AIModelArtifactSerializer(serializers.ModelSerializer):
             'crop_name_english', 'crop_name_bengali',
             'model_file_name', 'indices_file_name', 'model_file_size', 'indices_file_size', 'total_size_bytes',
             'model_file_url', 'indices_file_url',
-            'model_path', 'indices_path',
+            'model_path', 'indices_path', 'parsed_classes',
         ]
 
     def get_crop_name_english(self, obj):
-        return obj.crop_type
+        return obj.crop.name_en if obj.crop else None
 
     def get_crop_name_bengali(self, obj):
-        if not obj.crop_type:
-            return None
-        crop = Crop.objects.filter(english_name=obj.crop_type).only('bengali_name').first()
-        return crop.bengali_name if crop else None
+        return obj.crop.name_bn if obj.crop else None
 
     def get_model_file_name(self, obj):
         return self._name_from_path(obj.model_path, obj.model_file)
@@ -246,7 +249,7 @@ class AIModelArtifactSerializer(serializers.ModelSerializer):
             for chunk in uploaded_file.chunks():
                 destination.write(chunk)
 
-    def _store_model_files(self, instance, model_upload, indices_upload, crop_type, display_name):
+    def _store_model_files(self, instance, model_upload, indices_upload, crop, display_name):
         """Store model files to relative paths."""
         # Prefer explicit model_name/version when provided, fall back to display_name
         model_name_val = instance.model_name or display_name
@@ -260,24 +263,21 @@ class AIModelArtifactSerializer(serializers.ModelSerializer):
         base_dir = Path(settings.BASE_DIR)
 
         if instance.operation == AIModelArtifact.Operation.DISEASE_DETECTION:
-            crop_slug = slugify(crop_type or '')
-            if not crop_slug:
-                raise serializers.ValidationError({'crop_type': 'Crop name is required.'})
-            crop = Crop.objects.filter(english_name__iexact=crop_type).only('english_name').first()
             if not crop:
-                raise serializers.ValidationError({'crop_type': 'Please add this crop first in the Crop section, then choose it for the model.'})
-            instance.crop_type = crop.english_name
+                raise serializers.ValidationError({'crop': 'Crop is required for disease detection.'})
+            crop_slug = slugify(crop.name_en or '')
+            instance.crop = crop
             model_dir = base_dir / 'ml_models' / 'disease_detection' / crop_slug
             file_stem = f"{crop_slug}_{name_slug}_{version_slug}"
         elif instance.operation == AIModelArtifact.Operation.SOIL_CLASSIFICATION:
-            instance.crop_type = None
+            instance.crop = None
             model_dir = base_dir / 'ml_models' / 'soil_classification'
             file_stem = f"{name_slug}_{version_slug}"
         else:
-            crop_slug = slugify(crop_type or '')
-            if not crop_slug:
-                raise serializers.ValidationError({'crop_type': 'Crop name is required.'})
-            instance.crop_type = crop_type
+            if not crop:
+                raise serializers.ValidationError({'crop': 'Crop is required.'})
+            crop_slug = slugify(crop.name_en or '')
+            instance.crop = crop
             model_dir = base_dir / 'ml_models' / 'models' / crop_slug
             file_stem = f"{crop_slug}_{name_slug}_{version_slug}"
 
@@ -318,7 +318,7 @@ class AIModelArtifactSerializer(serializers.ModelSerializer):
             instance,
             model_upload=model_upload,
             indices_upload=indices_upload,
-            crop_type=validated_data.get('crop_type'),
+            crop=validated_data.get('crop'),
             display_name=validated_data.get('display_name'),
         )
         instance.save()
@@ -342,7 +342,7 @@ class AIModelArtifactSerializer(serializers.ModelSerializer):
             instance,
             model_upload=model_upload,
             indices_upload=indices_upload,
-            crop_type=instance.crop_type,
+            crop=instance.crop,
             display_name=instance.display_name,
         )
         instance.save()
@@ -383,9 +383,3 @@ class AIServiceConfigurationSerializer(serializers.ModelSerializer):
             instance.gemini_api_key = gemini_api_key.strip()
         return super().update(instance, validated_data)
 
-
-class CropSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Crop
-        fields = ['id', 'english_name', 'bengali_name']
-        read_only_fields = ['id']

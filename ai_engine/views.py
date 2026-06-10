@@ -11,7 +11,7 @@ from django.utils.decorators import method_decorator
 from drf_yasg.utils import swagger_auto_schema
 
 from .models import ChatSession, ChatMessage, DiseaseDetectionLog, SoilClassificationLog
-from .models import AIModelArtifact, AIServiceConfiguration, Crop, AIModelUsageHistory
+from .models import AIModelArtifact, AIServiceConfiguration, AIModelUsageHistory
 from .serializers import (
     ChatSessionSerializer,
     ChatSessionDetailSerializer,
@@ -25,8 +25,9 @@ from .serializers import (
     VoiceCommandSerializer,
     WeatherForecastSerializer,
     AIModelArtifactSerializer,
+    AIModelArtifactSerializer,
     AIServiceConfigurationSerializer,
-    CropSerializer,
+    LogFeedbackSerializer,
 )
 from .permissions import IsAIModelManager
 from .gemini_service import chat_with_gemini
@@ -67,7 +68,7 @@ class AIModelArtifactViewSet(viewsets.ModelViewSet):
         if operation:
             queryset = queryset.filter(operation=operation)
         if crop_type:
-            queryset = queryset.filter(crop_type=crop_type)
+            queryset = queryset.filter(crop__name_en__iexact=crop_type)
         if is_active in {'true', 'True', '1'}:
             queryset = queryset.filter(is_active=True)
         elif is_active in {'false', 'False', '0'}:
@@ -157,7 +158,7 @@ class AIModelUsageHistoryViewSet(viewsets.ReadOnlyModelViewSet):
         if model_id:
             queryset = queryset.filter(model_artifact_id=model_id)
         if crop_type:
-            queryset = queryset.filter(model_artifact__crop_type=crop_type)
+            queryset = queryset.filter(model_artifact__crop__name_en__iexact=crop_type)
         if success in {'true', 'True', '1'}:
             queryset = queryset.filter(success=True)
         elif success in {'false', 'False', '0'}:
@@ -297,13 +298,13 @@ class AIModelInventoryView(APIView):
     def get(self, request):
         disease_queryset = (
             AIModelArtifact.objects.filter(operation=AIModelArtifact.Operation.DISEASE_DETECTION)
-            .order_by('crop_type', '-is_active', '-updated_at')
+            .order_by('crop__name_en', '-is_active', '-updated_at')
         )
         disease_registry = AIModelArtifactSerializer(disease_queryset, many=True, context={'request': request}).data
 
         soil_queryset = (
             AIModelArtifact.objects.filter(operation=AIModelArtifact.Operation.SOIL_CLASSIFICATION)
-            .order_by('crop_type', '-is_active', '-updated_at')
+            .order_by('crop__name_en', '-is_active', '-updated_at')
         )
         soil_registry = AIModelArtifactSerializer(soil_queryset, many=True, context={'request': request}).data
 
@@ -327,23 +328,6 @@ class AIModelInventoryView(APIView):
         return Response(serializer.data)
 
 
-class CropViewSet(viewsets.ModelViewSet):
-    """Crop dictionary management for AI model tools.
-
-    Audience: Staff
-
-    Maintains crop catalog entries shown in AI management and inference workflows.
-    """
-    permission_classes = [permissions.IsAuthenticated, IsAIModelManager]
-    serializer_class = CropSerializer
-
-    def get_queryset(self):
-        return Crop.objects.all().order_by('english_name')
-
-    def perform_create(self, serializer):
-        serializer.save()
-
-
 class ActiveDiseaseCropsView(APIView):
     """Active disease model registry for farmer-facing clients.
 
@@ -356,12 +340,23 @@ class ActiveDiseaseCropsView(APIView):
     @swagger_auto_schema(tags=['AI'])
     def get(self, request):
         queryset = (
-            AIModelArtifact.objects.filter(
-                operation=AIModelArtifact.Operation.DISEASE_DETECTION,
-                is_active=True,
-            ).order_by('crop_type', '-updated_at')
+            AIModelArtifact.objects
+            .filter(operation=AIModelArtifact.Operation.DISEASE_DETECTION, is_active=True)
+            .select_related('crop')
+            .order_by('crop__name_en', '-updated_at')
         )
-        data = AIModelArtifactSerializer(queryset, many=True, context={'request': request}).data
+        data = []
+        for artifact in queryset:
+            data.append({
+                'id': artifact.id,
+                'crop_type': artifact.crop.name_en if artifact.crop else 'Unknown',
+                'crop_name_english': artifact.crop.name_en if artifact.crop else 'Unknown',
+                'crop_name_bengali': artifact.crop.name_bn if artifact.crop else '',
+                'model_name': artifact.model_name,
+                'version': artifact.version,
+                'display_name': artifact.display_name,
+                'updated_at': artifact.updated_at,
+            })
         return Response({'disease': {'registry': data}})
 
 
@@ -660,6 +655,16 @@ class DiseaseDetectView(APIView):
 
         image = serializer.validated_data['image']
         crop_type = serializer.validated_data['crop_type']
+        land_id = serializer.validated_data.get('land_id')
+        image_taken_at = serializer.validated_data.get('image_taken_at')
+
+        land_parcel = None
+        if land_id:
+            from lms_farming.models import LandParcel
+            try:
+                land_parcel = LandParcel.objects.get(id=land_id, owner=request.user)
+            except LandParcel.DoesNotExist:
+                pass
 
         try:
             from .disease_service import detect_disease
@@ -709,9 +714,11 @@ class DiseaseDetectView(APIView):
             user=request.user,
             crop_type=crop_type,
             image=image,
+            image_taken_at=image_taken_at,
             predicted_class=result['predicted_class'],
             confidence=result['confidence'],
             all_predictions=result['all_predictions'],
+            land_parcel=land_parcel,
         )
 
         record_model_usage(
@@ -743,6 +750,24 @@ class DiseaseDetectView(APIView):
         """GET /api/ai/disease-detect/ — List supported crops."""
         from .disease_service import get_supported_crops
         return Response({'supported_crops': get_supported_crops()})
+
+
+class DiseaseDetectionFeedbackView(APIView):
+    """Provide feedback on disease detection model accuracy."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(tags=['AI'], request_body=LogFeedbackSerializer)
+    def patch(self, request, pk):
+        try:
+            log = DiseaseDetectionLog.objects.get(pk=pk, user=request.user)
+        except DiseaseDetectionLog.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = LogFeedbackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        log.prediction_feedback = serializer.validated_data['prediction_feedback']
+        log.save(update_fields=['prediction_feedback'])
+        return Response({'status': 'success'})
 
 
 # ============================================
@@ -838,6 +863,7 @@ class SoilClassifyView(APIView):
 
         image = serializer.validated_data['image']
         land_id = serializer.validated_data.get('land_id')
+        image_taken_at = serializer.validated_data.get('image_taken_at')
 
         try:
             from .soil_service import classify_soil
@@ -897,6 +923,7 @@ class SoilClassifyView(APIView):
         log = SoilClassificationLog.objects.create(
             user=request.user,
             image=image,
+            image_taken_at=image_taken_at,
             predicted_type=result['predicted_type'],
             confidence=result['confidence'],
             all_predictions=result['all_predictions'],
@@ -926,6 +953,23 @@ class SoilClassifyView(APIView):
             **result,
             'land_updated': land_parcel is not None,
         })
+
+class SoilClassificationFeedbackView(APIView):
+    """Provide feedback on soil classification model accuracy."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(tags=['AI'], request_body=LogFeedbackSerializer)
+    def patch(self, request, pk):
+        try:
+            log = SoilClassificationLog.objects.get(pk=pk, user=request.user)
+        except SoilClassificationLog.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = LogFeedbackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        log.prediction_feedback = serializer.validated_data['prediction_feedback']
+        log.save(update_fields=['prediction_feedback'])
+        return Response({'status': 'success'})
 
 
 # ============================================

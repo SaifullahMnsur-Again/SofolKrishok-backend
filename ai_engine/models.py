@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
+from lms_farming.models import CropType
 
 
 class ChatSession(models.Model):
@@ -83,16 +84,29 @@ class ChatMessage(models.Model):
 class DiseaseDetectionLog(models.Model):
     """Log of disease detection predictions for analytics."""
 
+    class Feedback(models.TextChoices):
+        CORRECT = 'correct', 'Yes'
+        INCORRECT = 'incorrect', 'No'
+        NOT_SURE = 'not_sure', 'Not Sure'
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='disease_detections',
     )
+    land_parcel = models.ForeignKey(
+        'lms_farming.LandParcel',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     crop_type = models.CharField(max_length=50)
     image = models.ImageField(upload_to='disease_scans/')
+    image_taken_at = models.DateTimeField(null=True, blank=True)
     predicted_class = models.CharField(max_length=100)
     confidence = models.FloatField()
     all_predictions = models.JSONField(default=dict)
+    prediction_feedback = models.CharField(max_length=20, choices=Feedback.choices, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -106,15 +120,22 @@ class DiseaseDetectionLog(models.Model):
 class SoilClassificationLog(models.Model):
     """Log of soil classification predictions."""
 
+    class Feedback(models.TextChoices):
+        CORRECT = 'correct', 'Yes'
+        INCORRECT = 'incorrect', 'No'
+        NOT_SURE = 'not_sure', 'Not Sure'
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='soil_classifications',
     )
     image = models.ImageField(upload_to='soil_scans/')
+    image_taken_at = models.DateTimeField(null=True, blank=True)
     predicted_type = models.CharField(max_length=100)
     confidence = models.FloatField()
     all_predictions = models.JSONField(default=dict)
+    prediction_feedback = models.CharField(max_length=20, choices=Feedback.choices, blank=True)
     land_parcel = models.ForeignKey(
         'lms_farming.LandParcel',
         on_delete=models.SET_NULL,
@@ -130,46 +151,13 @@ class SoilClassificationLog(models.Model):
     def __str__(self):
         return f"{self.predicted_type} ({self.confidence:.1f}%)"
 
-
-class Crop(models.Model):
-    """Canonical crop list used by the Model Hub for dropdowns.
-
-    `english_name` is unique and used as the identifier shown in the UI.
-    `bengali_name` stores the corresponding Bangla display name.
-    """
-
-    english_name = models.CharField(max_length=120, unique=True)
-    bengali_name = models.CharField(max_length=120, blank=True)
-
-    class Meta:
-        db_table = 'crops'
-        ordering = ['english_name']
-
-    def save(self, *args, **kwargs):
-        previous_english_name = None
-        if self.pk:
-            previous_english_name = Crop.objects.filter(pk=self.pk).values_list('english_name', flat=True).first()
-
-        super().save(*args, **kwargs)
-
-        if previous_english_name and previous_english_name != self.english_name:
-            AIModelArtifact.objects.filter(crop_type=previous_english_name).update(crop_type=self.english_name)
-
-    def delete(self, *args, **kwargs):
-        AIModelArtifact.objects.filter(crop_type=self.english_name).update(is_active=False)
-        return super().delete(*args, **kwargs)
-
-    def __str__(self):
-        return f"{self.english_name} ({self.bengali_name})" if self.bengali_name else self.english_name
-
-
 class AIModelArtifact(models.Model):
     class Operation(models.TextChoices):
         DISEASE_DETECTION = 'disease_detection', 'Disease Detection'
         SOIL_CLASSIFICATION = 'soil_classification', 'Soil Classification'
 
     operation = models.CharField(max_length=32, choices=Operation.choices)
-    crop_type = models.CharField(max_length=50, blank=True, null=True)
+    crop = models.ForeignKey(CropType, on_delete=models.CASCADE, null=True, blank=True, related_name='ai_models')
     # Canonical metadata fields requested by UI: model name and version
     model_name = models.CharField(max_length=255, blank=True, null=True)
     version = models.CharField(max_length=64, blank=True, null=True)
@@ -181,6 +169,7 @@ class AIModelArtifact(models.Model):
     model_path = models.CharField(max_length=500, blank=True, null=True)
     indices_path = models.CharField(max_length=500, blank=True, null=True)
     is_active = models.BooleanField(default=False)
+    parsed_classes = models.JSONField(blank=True, null=True, help_text="Auto-populated mapping of class indices to labels")
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -194,10 +183,10 @@ class AIModelArtifact(models.Model):
 
     class Meta:
         db_table = 'ai_model_artifacts'
-        ordering = ['operation', 'crop_type', '-is_active', '-updated_at']
+        ordering = ['operation', 'crop', '-is_active', '-updated_at']
         constraints = [
             models.UniqueConstraint(
-                fields=['operation', 'crop_type'],
+                fields=['operation', 'crop'],
                 condition=Q(is_active=True),
                 name='unique_active_ai_model_per_scope',
             ),
@@ -210,26 +199,58 @@ class AIModelArtifact(models.Model):
             raise ValidationError({'model_path': 'Model path is required.'})
 
         if self.operation == self.Operation.DISEASE_DETECTION:
-            self.crop_type = (self.crop_type or '').strip() or None
-            if not self.crop_type:
-                raise ValidationError({'crop_type': 'Crop type is required for disease detection models.'})
+            if not self.crop:
+                raise ValidationError({'crop': 'Crop is required for disease detection models.'})
             has_indices = bool(self.indices_path) or bool(self.indices_file)
             if not has_indices:
                 raise ValidationError({'indices_path': 'Indices path is required for disease detection models.'})
         elif self.operation == self.Operation.SOIL_CLASSIFICATION:
-            self.crop_type = None
+            self.crop = None
 
     def save(self, *args, **kwargs):
         self.full_clean()
         with transaction.atomic():
             if self.is_active:
                 queryset = AIModelArtifact.objects.filter(operation=self.operation)
-                queryset = queryset.filter(crop_type=self.crop_type)
+                queryset = queryset.filter(crop=self.crop)
                 queryset.exclude(pk=self.pk).update(is_active=False)
             super().save(*args, **kwargs)
 
+        if not self.parsed_classes:
+            self._parse_and_store_classes()
+            if self.parsed_classes:
+                super().save(update_fields=['parsed_classes'])
+
+    def _parse_and_store_classes(self):
+        import ast
+        import os
+        import logging
+        from pathlib import Path
+        
+        logger = logging.getLogger(__name__)
+
+        indices_path_to_load = None
+        if self.indices_path:
+            indices_path_to_load = Path(settings.BASE_DIR) / self.indices_path
+        elif self.indices_file:
+            try:
+                indices_path_to_load = self.indices_file.path
+            except NotImplementedError:
+                # If using remote storage or file not saved yet, this might fail
+                pass
+
+        if indices_path_to_load and os.path.exists(indices_path_to_load):
+            try:
+                with open(indices_path_to_load, 'r') as f:
+                    raw = f.read().strip()
+                    indices = ast.literal_eval(raw)
+                    # Convert to { "0": "Label" } because JSON keys must be strings
+                    self.parsed_classes = {str(v): str(k) for k, v in indices.items()}
+            except Exception as e:
+                logger.warning(f"Failed to parse indices for AIModelArtifact {self.display_name}: {e}")
+
     def __str__(self):
-        suffix = f" ({self.crop_type})" if self.crop_type else ''
+        suffix = f" ({self.crop.name_en})" if self.crop else ''
         state = 'active' if self.is_active else 'inactive'
         return f"{self.display_name} - {self.get_operation_display()}{suffix} [{state}]"
 

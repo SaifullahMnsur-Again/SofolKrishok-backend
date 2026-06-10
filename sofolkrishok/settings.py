@@ -30,9 +30,12 @@ load_dotenv()
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', default='localhost,127.0.0.1,testserver').split(',')
 
+import sys
+IS_TESTING = 'test' in sys.argv or 'test_coverage' in sys.argv
+
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-if not DEBUG:
+if not DEBUG and not IS_TESTING:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -58,6 +61,7 @@ INSTALLED_APPS = [
     # Third party
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'drf_yasg',
 
@@ -209,7 +213,7 @@ SIMPLE_JWT = {
 #     'http://127.0.0.1:5174',
 # ]
 
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if origin.strip()]
 
 # CORS_ALLOW_CREDENTIALS = True
 # CSRF_TRUSTED_ORIGINS = comma_separated_list(

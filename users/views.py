@@ -497,3 +497,33 @@ class NotificationViewSet(viewsets.ModelViewSet):
         notification.is_read = True
         notification.save(update_fields=['is_read'])
         return Response({'status': 'marked as read'})
+
+
+class LogoutView(APIView):
+    """
+    Logout and invalidate refresh token.
+
+    Audience: Both
+    
+    Blacklists the provided refresh token to prevent further token refreshes.
+    
+    **Request Body:**
+    - refresh (string): Refresh token to invalidate
+    
+    **Authentication:** Required (Bearer token)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(tags=['Auth'])
+    def post(self, request):
+        try:
+            refresh_token = request.data.get("refresh")
+            if not refresh_token:
+                return Response({"detail": "Refresh token is required."}, status=status.HTTP_400_BAD_REQUEST)
+            from rest_framework_simplejwt.tokens import RefreshToken
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
+        except Exception:
+            return Response({"detail": "Invalid or blacklisted refresh token."}, status=status.HTTP_400_BAD_REQUEST)
+

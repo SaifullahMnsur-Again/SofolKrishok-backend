@@ -49,12 +49,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
 
     def get_avatar_url(self, obj):
-        request = self.context.get('request')
         if obj.avatar and hasattr(obj.avatar, 'url'):
-            url = obj.avatar.url
-            if request:
-                return request.build_absolute_uri(url)
-            return url
+            return obj.avatar.url
         return None
 
     def validate_expert_tags(self, value):
@@ -75,12 +71,8 @@ class UserListSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
 
     def get_avatar_url(self, obj):
-        request = self.context.get('request')
         if obj.avatar and hasattr(obj.avatar, 'url'):
-            url = obj.avatar.url
-            if request:
-                return request.build_absolute_uri(url)
-            return url
+            return obj.avatar.url
         return None
 
     def validate_expert_tags(self, value):

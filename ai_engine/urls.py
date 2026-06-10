@@ -5,8 +5,6 @@ from . import views
 router = DefaultRouter()
 router.register('models', views.AIModelArtifactViewSet, basename='ai-models')
 router.register('model-usage', views.AIModelUsageHistoryViewSet, basename='ai-model-usage')
-router.register('crops', views.CropViewSet, basename='ai-crops')
-
 urlpatterns = [
     # Gemini Chat (Memory-Aware)
     path('gemini-chat/', views.GeminiChatView.as_view(), name='gemini-chat'),
@@ -17,12 +15,14 @@ urlpatterns = [
 
     # Disease Detection
     path('disease-detect/', views.DiseaseDetectView.as_view(), name='disease-detect'),
+    path('disease-detect-log/<int:pk>/feedback/', views.DiseaseDetectionFeedbackView.as_view(), name='disease-detect-feedback'),
 
     # Active disease crops — accessible by all authenticated users (used by DiseaseDetectPage)
     path('active-disease-crops/', views.ActiveDiseaseCropsView.as_view(), name='active-disease-crops'),
 
     # Soil Classification
     path('soil-classify/', views.SoilClassifyView.as_view(), name='soil-classify'),
+    path('soil-classify-log/<int:pk>/feedback/', views.SoilClassificationFeedbackView.as_view(), name='soil-classify-feedback'),
 
     # Voice Command Intent Mapping
     path('voice-command/', views.VoiceCommandView.as_view(), name='voice-command'),

@@ -1,9 +1,15 @@
 from rest_framework import serializers
 from .models import (
     LandParcel, LandParcelHistory, CropTrack, CropTrackHistory, CropStage,
-    CropActivityLog, FarmingCycle, FarmingCycleHistory
+    CropActivityLog, FarmingCycle, FarmingCycleHistory, CropType
 )
 
+
+class CropTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CropType
+        fields = ['id', 'name_en', 'name_bn', 'is_public', 'is_approved']
+        read_only_fields = ['id', 'is_approved']
 
 class CropStageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -25,6 +31,7 @@ class CropActivityLogSerializer(serializers.ModelSerializer):
 
 
 class CropTrackSerializer(serializers.ModelSerializer):
+    crop_name = serializers.CharField(source='crop.name_en', read_only=True)
     stages = CropStageSerializer(many=True, read_only=True)
     activity_logs = CropActivityLogSerializer(many=True, read_only=True)
 
@@ -42,6 +49,7 @@ class CropTrackHistorySerializer(serializers.ModelSerializer):
 
 
 class LandParcelSerializer(serializers.ModelSerializer):
+    default_crop_name = serializers.CharField(source='default_crop.name_en', read_only=True)
     crop_tracks = CropTrackSerializer(many=True, read_only=True)
 
     class Meta:
@@ -52,9 +60,11 @@ class LandParcelSerializer(serializers.ModelSerializer):
 
 class LandParcelMinimalSerializer(serializers.ModelSerializer):
     """Minimal version for dropdowns and lists."""
+    default_crop_name = serializers.CharField(source='default_crop.name_en', read_only=True)
+
     class Meta:
         model = LandParcel
-        fields = ['id', 'name', 'location', 'soil_type', 'area_acres']
+        fields = ['id', 'name', 'location', 'soil_type', 'default_crop', 'default_crop_name', 'default_disease', 'area_acres']
 
 
 class LandParcelHistorySerializer(serializers.ModelSerializer):
@@ -78,6 +88,16 @@ class FarmingCycleHistorySerializer(serializers.ModelSerializer):
 
 class FarmingCycleSerializer(serializers.ModelSerializer):
     history_entries = FarmingCycleHistorySerializer(many=True, read_only=True)
+
+    class Meta:
+        model = FarmingCycle
+        fields = [
+            'id', 'land', 'name', 'description', 'started_at', 'expected_end_at',
+            'actual_end_at', 'status', 'soil_preparation_notes', 'expected_yield',
+            'actual_yield', 'total_investment', 'total_revenue', 'notes', 'metadata',
+            'history_entries', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'history_entries', 'created_at', 'updated_at']
 
     class Meta:
         model = FarmingCycle

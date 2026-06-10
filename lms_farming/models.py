@@ -2,6 +2,35 @@ from django.db import models
 from django.conf import settings
 
 
+class CropType(models.Model):
+    """A registry of all available crops. Users can suggest new ones."""
+    name_en = models.CharField(max_length=100, unique=True)
+    name_bn = models.CharField(max_length=100, blank=True)
+    is_public = models.BooleanField(default=False, help_text="True if published for farmers, False for internal testing")
+    is_approved = models.BooleanField(default=False)
+    suggested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='suggested_crops'
+    )
+    merged_into = models.ForeignKey(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='merged_from'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'crop_types'
+        ordering = ['name_en']
+
+    def __str__(self):
+        return f"{self.name_en} ({self.name_bn})" if self.name_bn else self.name_en
+
 class LandParcel(models.Model):
     """A registered piece of farming land owned by a farmer."""
 
@@ -16,6 +45,8 @@ class LandParcel(models.Model):
     longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
     area_acres = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     soil_type = models.CharField(max_length=100, blank=True, help_text="Auto-filled by soil classifier")
+    default_disease = models.CharField(max_length=100, blank=True, help_text="Auto-filled by disease detector")
+    default_crop = models.ForeignKey(CropType, on_delete=models.SET_NULL, null=True, blank=True, related_name='default_lands')
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -60,7 +91,7 @@ class CropTrack(models.Model):
         COMPLETED = 'completed', 'Completed'
 
     land = models.ForeignKey(LandParcel, on_delete=models.CASCADE, related_name='crop_tracks')
-    crop_name = models.CharField(max_length=100, help_text="e.g., Rice, Wheat, Corn, Potato")
+    crop = models.ForeignKey(CropType, on_delete=models.RESTRICT, null=True, blank=True, related_name='tracks')
     season = models.CharField(max_length=100, help_text="e.g., Winter 2026, Monsoon 2026")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNING)
     planted_date = models.DateField(null=True, blank=True)
@@ -75,7 +106,8 @@ class CropTrack(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.crop_name} on {self.land.name} ({self.season})"
+        crop_name = self.crop.name_en if self.crop else 'Unknown Crop'
+        return f"{crop_name} on {self.land.name} ({self.season})"
 
 
 class CropActivityLog(models.Model):

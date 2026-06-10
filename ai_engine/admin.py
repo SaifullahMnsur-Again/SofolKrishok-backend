@@ -40,8 +40,8 @@ class SoilClassificationLogAdmin(admin.ModelAdmin):
 
 @admin.register(AIModelArtifact)
 class AIModelArtifactAdmin(admin.ModelAdmin):
-    list_display = ('display_name', 'operation', 'crop_type', 'is_active', 'created_by', 'updated_at')
-    list_filter = ('operation', 'crop_type', 'is_active')
+    list_display = ('display_name', 'operation', 'crop', 'is_active', 'created_by', 'updated_at')
+    list_filter = ('operation', 'crop', 'is_active')
     search_fields = ('display_name', 'notes', 'created_by__username')
     readonly_fields = ('created_at', 'updated_at')
 
