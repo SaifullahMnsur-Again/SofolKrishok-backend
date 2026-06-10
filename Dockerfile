@@ -26,6 +26,10 @@ COPY . .
 # 5. Compile static administrative layout maps
 RUN python manage.py collectstatic --noinput
 
+# 6. Copy and configure entrypoint
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 EXPOSE 8000
 
-CMD ["gunicorn", "sofolkrishok.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+ENTRYPOINT ["./entrypoint.sh"]
