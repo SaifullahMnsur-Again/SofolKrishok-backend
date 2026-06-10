@@ -3,75 +3,55 @@
 **Base URL:** `http://localhost:8000/api` (development)  
 **Production:** `/api` (with reverse proxy at root)
 
+This document provides a comprehensive guide to the SofolKrishok unified REST API, detailing the purpose, sequence of calls, parameters, request bodies, and responses for every endpoint.
+
 ---
 
 ## Table of Contents
 
-1. [Authentication](#authentication)
-2. [Farming Management](#farming-management)
-3. [AI Engine](#ai-engine)
-4. [Marketplace](#marketplace)
-5. [Consultations](#consultations)
-6. [Finance & Billing](#finance--billing)
-7. [Error Handling](#error-handling)
+1. [Authentication & User Management](#1-authentication--user-management)
+2. [Farming Management](#2-farming-management)
+3. [AI Engine & ML Hub](#3-ai-engine--ml-hub)
+4. [Marketplace](#4-marketplace)
+5. [Consultations](#5-consultations)
+6. [Finance & Billing](#6-finance--billing)
 
 ---
 
-## Authentication
+## 1. Authentication & User Management
+**Audience:** Both (Farmers & Staff)
 
-All endpoints except registration and login require a valid JWT Bearer token in the `Authorization` header:
+All protected endpoints require a valid JWT Bearer token in the `Authorization` header: `Authorization: Bearer <access_token>`.
 
-```
-Authorization: Bearer {access_token}
-```
+### Typical Sequence of Calls
+1. **POST** `/auth/login/` to obtain `access` and `refresh` tokens.
+2. Store tokens in local storage.
+3. Attach `Authorization: Bearer <access_token>` to all subsequent requests.
+4. When access token expires (401 response), call **POST** `/auth/token/refresh/` with the refresh token to get a new access token.
 
-### Swagger Authorization Setup
-
-Use this flow in Swagger UI:
-
-1. Call `POST /auth/login/` to get both `access` and `refresh` tokens.
-2. Click Authorize and set `Bearer` as: `Bearer {access_token}`.
-3. Call protected endpoints using the access token.
-4. When access token expires, call `POST /auth/token/refresh/` with:
-
-```json
-{
-  "refresh": "{refresh_token}"
-}
-```
-
-5. Replace the Bearer token in Swagger Authorize with the new access token.
-
-### Endpoint Audience Segmentation
-
-Audience labels are shown in endpoint descriptions:
-
-- `Audience: Farmer` - Intended for farmer workflows
-- `Audience: Staff` - Staff/manager/operations only
-- `Audience: Both` - Available to both staff and farmers (role rules may still vary)
-
-### Register User
+### 1.1 Register User
 - **POST** `/auth/register/`
-- **Roles:** farmer, sales, service, expert, sales_team_lead, sales_team_member, service_team_lead, service_team_member, site_engineer, branch_manager, general_manager
-- **Request:**
+- **Purpose:** Create a new user account (Farmer or Staff).
+- **Request Body:**
   ```json
   {
     "username": "newuser",
     "email": "user@example.com",
     "password": "SecurePass123",
+    "password_confirm": "SecurePass123",
     "first_name": "John",
     "last_name": "Doe",
     "phone": "+8801234567890",
     "role": "farmer",
-    "zone": "Rajshahi",
-    "language": "bengali"
+    "preferred_language": "bengali"
   }
   ```
-- **Response:** `201 Created` - User profile with JWT tokens
+- **Response:** `201 Created` - Returns the created user object.
 
-### Login
+### 1.2 Login (Token Obtain)
 - **POST** `/auth/login/`
-- **Request:**
+- **Purpose:** Authenticate and obtain JWT access and refresh tokens.
+- **Request Body:**
   ```json
   {
     "username": "user@example.com",
@@ -81,48 +61,49 @@ Audience labels are shown in endpoint descriptions:
 - **Response:** `200 OK`
   ```json
   {
-    "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "user": { /* user profile */ }
+    "access": "eyJ0e...",
+    "refresh": "eyJ0e...",
+    "user": { "id": 1, "role": "farmer", "email": "..." }
   }
   ```
 
-### Refresh Token
+### 1.3 Refresh Token
 - **POST** `/auth/token/refresh/`
-- **Request:**
+- **Purpose:** Obtain a new access token using a valid refresh token.
+- **Request Body:** `{ "refresh": "eyJ0e..." }`
+- **Response:** `200 OK` - `{ "access": "new_eyJ0e..." }`
+
+### 1.4 Get/Update Profile
+- **GET/PATCH** `/auth/profile/`
+- **Purpose:** View or update the currently authenticated user's profile.
+- **Response (GET):** `200 OK`
   ```json
   {
-    "refresh": "{refresh_token}"
+    "id": 1,
+    "username": "johndoe",
+    "email": "john@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "role": "farmer",
+    "phone": "+880...",
+    "address": "Dhaka",
+    "preferred_language": "bengali",
+    "zone": "Dhaka",
+    "avatar_url": "/media/avatars/john.jpg"
   }
   ```
-- **Response:** `200 OK` - New access token
+- **Request Body (PATCH):** Provide any editable fields (e.g., `phone`, `first_name`, `address`).
 
-### Get Current Profile
-- **GET** `/auth/profile/`
-- **Auth Required:** Yes
+### 1.5 Avatar Management
+- **POST / DELETE** `/auth/avatar/`
+- **Purpose:** Upload or delete the user's profile picture.
+- **Request (POST):** `multipart/form-data` with key `avatar`.
+- **Response:** `200 OK`
 
-### Update Profile
-- **PUT/PATCH** `/auth/profile/`
-- **Auth Required:** Yes
-- **Request:**
-  ```json
-  {
-    "first_name": "Jane",
-    "language": "english",
-    "zone": "Sylhet"
-  }
-  ```
-
-### Upload Avatar
-- **POST** `/auth/avatar/`
-- **Auth Required:** Yes
-- **Content-Type:** `multipart/form-data`
-- **Body:** Form with `avatar` field (JPEG/PNG, max 5MB)
-
-### Change Password
+### 1.6 Change Password
 - **POST** `/auth/change-password/`
-- **Auth Required:** Yes
-- **Request:**
+- **Purpose:** Update user password securely.
+- **Request Body:**
   ```json
   {
     "current_password": "OldPass123",
@@ -130,553 +111,297 @@ Audience labels are shown in endpoint descriptions:
     "confirm_password": "NewPass456"
   }
   ```
+- **Response:** `200 OK` - Password updated successfully.
+
+### 1.7 User Management (Staff/Admin)
+- **GET** `/auth/users/`
+  - **Purpose:** List all users (Staff only).
+- **GET/PATCH/DELETE** `/auth/manage/{id}/`
+  - **Purpose:** Manage specific users (update roles, zone, etc.).
+- **GET** `/auth/manage/{id}/activity/`
+  - **Purpose:** View user's recent system activity (logins, actions).
+
+### 1.8 Audit Logs
+- **GET** `/auth/audit/`
+- **Purpose:** View system-wide audit logs tracking user actions like role changes, account creation, deletions, and administrative operations. (Manager roles only).
+
+### 1.9 Notifications
+- **GET** `/auth/notifications/` - List user's notifications.
+- **POST** `/auth/notifications/` - Create a notification (Staff only).
+- **POST** `/auth/notifications/{id}/mark_read/` - Mark as read.
 
 ---
 
-## Farming Management
+## 2. Farming Management
+**Audience:** Farmer
 
-### Land Parcels
+CRUD operations for managing agricultural land parcels, tracking crop cycles, phenophases, and activity logs.
 
-#### List/Create Land
-- **GET/POST** `/farming/lands/`
-- **Auth Required:** Yes
-- **GET Response:** Paginated list of user's land parcels
-- **POST Request:**
+### Typical Sequence of Calls
+1. **GET** `/farming/crops/` - Farmer retrieves the global list of supported crops.
+2. **POST** `/farming/lands/` - Farmer creates a new Land Parcel profile.
+3. **POST** `/farming/tracks/` - Farmer starts a new crop growing season on that land, providing the crop ID.
+3. **POST** `/farming/tracks/{id}/activities/` to log watering, fertilizing, etc.
+4. **GET** `/farming/lands/{id}/history/` to view the comprehensive audit trail.
+
+### 2.1 Land Parcels
+- **GET** `/farming/lands/` - List authenticated user's land parcels.
+- **POST** `/farming/lands/` - Register new land.
+  **Request Body:**
   ```json
   {
     "name": "North Field",
-    "location": "Rajshahi District",
-    "latitude": "24.3745",
-    "longitude": "88.5971",
-    "area_acres": "5.5",
+    "location": "Rajshahi Village",
+    "latitude": 24.3745,
+    "longitude": 88.5971,
+    "area_acres": 5.5,
     "soil_type": "loamy",
-    "notes": "Recently irrigated"
+    "notes": "Good irrigation"
   }
   ```
+- **GET/PUT/PATCH/DELETE** `/farming/lands/{id}/` - Manage specific land parcel.
+- **GET** `/farming/lands/{id}/history/` - View complete land & crop history including previous values and changes.
 
-#### Get/Update/Delete Land
-- **GET/PUT/PATCH/DELETE** `/farming/lands/{id}/`
-- **Auth Required:** Yes
-- **Permissions:** Owner only
-
-#### Land History
-- **GET** `/farming/lands/{id}/history/`
-- **Returns:** Immutable modification history for the land parcel
-
-### Crop Tracks
-
-#### List/Create Crop Track
-- **GET/POST** `/farming/tracks/`
-- **Auth Required:** Yes
-- **POST Request:**
+### 2.2 Crop Tracks (Seasons)
+- **GET** `/farming/tracks/` - List active and past crop tracks.
+- **POST** `/farming/tracks/` - Start a new crop season.
+  - **Request Body:**
   ```json
   {
-    "land": 1,
-    "crop_name": "Rice",
-    "crop_type": "rice",
-    "sowing_date": "2026-04-15",
-    "expected_harvest": "2026-07-15",
-    "quantity_kg": "500",
-    "seed_variety": "BR29",
-    "notes": "Organic farming"
+    "land": 12,
+    "crop": 5,
+    "season": "Winter 2026",
+    "planted_date": "2026-01-15"
   }
   ```
-
-#### Track Activities (Irrigation, Fertilization, Pesticide, Harvest)
-- **GET/POST** `/farming/tracks/{id}/activities/`
-- **POST Request:**
+- **GET/PUT/PATCH/DELETE** `/farming/tracks/{id}/` - Manage specific crop track.
+- **GET/POST** `/farming/tracks/{id}/activities/` - Log farming activities.
+  **POST Body:**
   ```json
   {
     "activity_type": "irrigation",
-    "date": "2026-05-10",
-    "quantity": "50",
-    "unit": "liter",
-    "notes": "Second irrigation round"
+    "notes": "Applied 50L water",
+    "occurred_at": "2026-05-15T10:00:00Z"
   }
   ```
+  *Note: Logging a `harvest` activity automatically updates the track's actual_harvest_date and status.*
 
-### Farming Cycles (Seasons)
+### 2.3 Crop Registry
+- **GET** `/farming/crops/` - List all crops available in the system. Farmers see public crops and their own suggestions. Staff see all crops.
+- **POST** `/farming/crops/` - Suggest a new crop (if farmer) or create an approved crop (if staff). Requires `name_en` and `name_bn`.
+- **PATCH** `/farming/crops/{id}/` - Staff only. Update crop details and approve farmer suggestions.
 
-#### List/Create Cycles
-- **GET/POST** `/farming/cycles/`
-- **Auth Required:** Yes
-- **POST Request:**
-  ```json
-  {
-    "land": 1,
-    "season": "2026-summer",
-    "status": "active",
-    "start_date": "2026-04-01",
-    "end_date": "2026-09-30",
-    "crop_type": "rice",
-    "yield_kg": null,
-    "investment_taka": "25000",
-    "revenue_taka": null,
-    "notes": "Summer rice cultivation"
-  }
-  ```
+### 2.4 Crop Stages
+- **GET/POST** `/farming/stages/` - Manage specific growth phases (e.g. Vegetative, Flowering).
+- **GET/PUT/PATCH/DELETE** `/farming/stages/{id}/`
 
-#### Cycle Modification History
-- **GET** `/farming/cycles/{id}/history/`
-- **Returns:** Complete audit trail of all cycle changes
+### 2.4 Farming Cycles
+- **GET/POST** `/farming/cycles/` - Manage complete farming cycles with financial tracking (revenue, investment, ROI).
+- **GET/PUT/PATCH/DELETE** `/farming/cycles/{id}/`
 
-### Weather
-
-#### Get Weather Forecast
-- **GET** `/farming/weather/?lat=24.3745&lon=88.5971&days=7`
-- **Auth Required:** Yes
-- **Response:**
-  ```json
-  {
-    "location": "Rajshahi",
-    "forecasts": [
-      {
-        "date": "2026-04-30",
-        "temp_min": "28",
-        "temp_max": "35",
-        "humidity": "75",
-        "rainfall_mm": "5",
-        "condition": "Partly Cloudy",
-        "irrigation_advice": "Water if soil is dry"
-      }
-    ]
-  }
-  ```
+### 2.5 Weather
+- **GET** `/farming/weather/?lat=24.3745&lon=88.6042&days=3`
+- **Purpose:** Get weather forecast for farming operations. Defaults to the user's first land parcel coordinates if `lat`/`lon` are not provided.
 
 ---
 
-## AI Engine
+## 3. AI Engine & ML Hub
+**Audience:** Both
 
-### Chat Sessions
+API for interacting with generative AI, computer vision models, and natural language processing.
 
-#### Create Session
-- **POST** `/ai/chat-sessions/`
-- **Auth Required:** Yes
-- **Request:**
-  ```json
-  {
-    "title": "Rice Farming Questions",
-    "crop_context": "rice",
-    "land": 1
-  }
-  ```
+### 3.1 Chat Sessions
+- **GET/POST** `/ai/chat-sessions/` - List or create memory-aware chat sessions.
+  **POST Body:** `{ "title": "Rice Disease Advice" }`
+- **GET/DELETE** `/ai/chat-sessions/{id}/` - Retrieve session history or delete it.
 
-#### Send Message
+### 3.2 Gemini Chat
 - **POST** `/ai/gemini-chat/`
-- **Auth Required:** Yes
-- **Request:**
+- **Purpose:** Send a message to the Gemini AI within a specific session.
+- **Request Body:**
   ```json
   {
-    "session_id": 5,
-    "message": "How do I prevent rice blast disease?",
-    "land_id": 1,
-    "crop_type": "rice"
+    "message": "What fertilizer is best for sandy soil?",
+    "session_id": 1
   }
   ```
 - **Response:**
   ```json
   {
-    "session_id": 5,
-    "user_message": "...",
-    "ai_response": "Rice blast is caused by the fungus Pyricularia oryzae...",
-    "timestamp": "2026-04-30T10:30:00Z"
+    "response": "For sandy soils, use...",
+    "session_id": 1,
+    "history": [...]
   }
   ```
 
-### Disease Detection
-
-#### Detect Disease
+### 3.3 Disease Detection
 - **POST** `/ai/disease-detect/`
-- **Content-Type:** `multipart/form-data`
-- **Auth Required:** Yes
-- **Request:**
-  ```
-  image: <JPEG/PNG file>
-  crop_type: rice
-  land_id: 1
-  ```
-- **Response:**
+- **Purpose:** Detect crop diseases from images.
+- **Request (multipart/form-data):** `image` (File), `crop_type` (String).
+- **Response:** `200 OK`
   ```json
   {
-    "disease_detected": "Rice Blast",
-    "confidence": "95%",
-    "severity": "moderate",
-    "treatment": "Apply fungicide XYZ...",
-    "similar_diseases": ["Brown Spot", "Leaf Smut"],
-    "image_url": "/media/disease_scans/..."
+    "disease": "Leaf Blight",
+    "confidence": 0.95,
+    "treatment_recommendation": "Apply fungicide XYZ..."
   }
   ```
 
-### Soil Classification
-
-#### Classify Soil
+### 3.4 Soil Classification
 - **POST** `/ai/soil-classify/`
-- **Content-Type:** `multipart/form-data`
-- **Auth Required:** Yes
-- **Request:**
-  ```
-  image: <soil sample photo>
-  land_id: 1
-  ```
-- **Response:**
+- **Purpose:** Classify soil type from an image.
+- **Request (multipart/form-data):** `image` (File).
+- **Response:** `200 OK`
   ```json
   {
-    "soil_type": "loamy",
-    "texture": "sandy-clay-loam",
-    "ph": "7.2",
-    "fertility_rating": "high",
-    "recommended_crops": ["rice", "wheat", "vegetables"],
-    "fertilizer_recommendations": {
-      "nitrogen": "100 kg/acre",
-      "phosphorus": "50 kg/acre",
-      "potassium": "40 kg/acre"
-    }
+    "soil_type": "Loamy",
+    "confidence": 0.88,
+    "ph_estimate": 6.5
   }
   ```
 
-### AI Model Management
+### 3.5 Voice Commands
+- **POST** `/ai/voice-command/`
+- **Purpose:** Parse natural language voice text into actionable UI intents.
+- **Request Body:** `{ "text": "show me my pending orders" }`
+- **Response:** `200 OK`
+  ```json
+  {
+    "intent": "NAVIGATE",
+    "target": "/orders?status=pending",
+    "confidence": 0.98
+  }
+  ```
 
-#### List AI Models
-- **GET** `/ai/models/`
-- **Auth Required:** Yes
-- **Response:** Paginated list of available AI models with status
-
-#### Model Usage History
-- **GET** `/ai/model-usage/?service=disease_detection&start=2026-04-01&end=2026-04-30`
-- **Auth Required:** Yes
-- **Response:** Usage analytics with charts data
+### 3.6 AI Models Management (Staff Only)
+- **GET/POST** `/ai/models/` - List or upload new ML model artifacts (`.tflite`, `.h5`).
+- **PATCH** `/ai/models/{id}/` - Partially update an existing model artifact (e.g., change its name, active status, or replace file).
+- **POST** `/ai/models/{id}/activate/` - Set a model as the active version for its crop and operation.
+- **GET** `/ai/models/inventory/` - Returns the full structured snapshot of all disease and soil models along with Gemini API configurations for the Staff Model Hub UI.
+- **GET** `/ai/model-usage/` - View telemetry and usage stats.
+- **GET** `/ai/active-disease-crops/` - List crops that currently have an active disease detection model available.
+- **GET/PATCH** `/ai/settings/gemini/` - Manage Gemini API Key and Model configurations.
 
 ---
 
-## Marketplace
+## 4. Marketplace
+**Audience:** Both
 
-### Products
+E-commerce platform for agricultural products.
 
-#### List Products
-- **GET** `/marketplace/products/?category=seeds&search=rice`
-- **Auth Required:** No (browse only) / Yes (for orders)
-- **Response:**
-  ```json
-  {
-    "count": 150,
-    "next": "/marketplace/products/?page=2",
-    "results": [
-      {
-        "id": 42,
-        "name": "BR29 Rice Seeds",
-        "category": "seeds",
-        "price_taka": "500",
-        "stock_quantity": "100",
-        "description": "High-yielding rice variety",
-        "image_url": "/media/products/...",
-        "vendor": "Green Seeds Ltd"
-      }
-    ]
-  }
-  ```
+### Typical Sequence of Calls
+1. **GET** `/marketplace/products/` - Farmer browses available products.
+2. **POST** `/marketplace/orders/` - Farmer creates an order with multiple items. Stock is atomically decremented.
+3. **POST** `/finance/checkout/` - Farmer pays for the order via the Finance module.
+4. Staff uses **PATCH** `/marketplace/orders/{id}/` to move order status to `shipped` or `delivered`.
 
-#### Get Product Details
-- **GET** `/marketplace/products/{id}/`
-- **Auth Required:** No
+### 4.1 Products
+- **GET** `/marketplace/products/`
+  - **Query Params:** `?category=fertilizer`
+  - **Response:** Paginated list of active products.
+- **GET** `/marketplace/products/{id}/` - Get product details.
+- **POST/PUT/PATCH/DELETE** `/marketplace/products/` (Staff only) - Manage product inventory, set `stock_quantity`, `price`, `discount_price`.
 
-### Orders
-
-#### Create Order
+### 4.2 Orders
+- **GET** `/marketplace/orders/` - List orders (Customers see own, Staff see all).
 - **POST** `/marketplace/orders/`
-- **Auth Required:** Yes
-- **Request:**
-  ```json
-  {
-    "product": 42,
-    "quantity": 5,
-    "delivery_address": "Village XYZ, Rajshahi",
-    "payment_method": "bkash"
-  }
-  ```
-
-#### List Orders
-- **GET** `/marketplace/orders/`
-- **Auth Required:** Yes (user sees only their orders)
-- **Response:** User's order history with statuses
-
-#### Update Order Status
-- **PATCH** `/marketplace/orders/{id}/`
-- **Auth Required:** Yes (vendor/staff only)
-- **Request:**
-  ```json
-  {
-    "status": "shipped"
-  }
-  ```
-
----
-
-## Consultations
-
-### Consultation Slots
-
-#### List Available Slots
-- **GET** `/consultation/slots/?available=true&expert_role=agronomist`
-- **Auth Required:** No (public view)
-- **Response:**
-  ```json
-  {
-    "count": 45,
-    "results": [
-      {
-        "id": 8,
-        "expert": "Dr. Karim Ahmed",
-        "expert_role": "agronomist",
-        "date": "2026-05-05",
-        "time_start": "10:00",
-        "time_end": "10:30",
-        "mode": "video",
-        "consultation_type": "crop_disease",
-        "price_taka": "500",
-        "is_available": true
-      }
-    ]
-  }
-  ```
-
-### Tickets (Bookings)
-
-#### Book Consultation
-- **POST** `/consultation/tickets/book/`
-- **Auth Required:** Yes
-- **Request:**
-  ```json
-  {
-    "slot": 8,
-    "consultation_type": "crop_disease",
-    "description": "My rice crop has brown spots"
-  }
-  ```
-
-#### List User's Tickets
-- **GET** `/consultation/tickets/`
-- **Auth Required:** Yes
-- **Response:** User's consultation bookings with session links
-
----
-
-## Finance and Billing
-
-### Subscription Plans
-
-#### List Plans
-- **GET** `/finance/plans/`
-- **Auth Required:** No
-- **Response:**
-  ```json
-  {
-    "count": 3,
-    "results": [
-      {
-        "id": 1,
-        "name": "Starter",
-        "plan_type": "primary",
-        "price_monthly": "0",
-        "credits": "0",
-        "disease_detection_limit": "5",
-        "ai_assistant_daily_limit": "20",
-        "expert_appointment_limit": "0",
-        "features": [
-          "AI Disease Detection",
-          "Soil Analysis",
-          "Weather Forecast"
-        ]
-      }
-    ]
-  }
-  ```
-
-### Checkout
-
-#### Initiate Payment
-- **POST** `/finance/checkout/`
-- **Auth Required:** Yes
-- **Request:**
-  ```json
-  {
-    "plan_id": 2,
-    "payment_gateway": "sslcommerz",
-    "currency": "BDT"
-  }
-  ```
-- **Response:**
-  ```json
-  {
-    "session_id": "62e7d29c-1234-5678",
-    "checkout_url": "https://sandbox.sslcommerz.com/gwprocess/v4/gw.php?...",
-    "total_amount": "299"
-  }
-  ```
-
-### Transaction Ledger
-
-#### View Billing History
-- **GET** `/finance/ledger/?start_date=2026-04-01&end_date=2026-04-30`
-- **Auth Required:** Yes
-- **Response:**
-  ```json
-  {
-    "count": 2,
-    "results": [
-      {
-        "id": 15,
-        "type": "subscription_charge",
-        "amount_taka": "299",
-        "date": "2026-04-15",
-        "status": "completed",
-        "description": "Farmer Pro - April 2026",
-        "plan": "Farmer Pro"
-      }
-    ]
-  }
-  ```
-
----
-
-## Error Handling
-
-All errors follow this format:
-
-```json
-{
-  "detail": "Error message",
-  "errors": {
-    "field_name": ["Field-specific error message"]
-  }
-}
-```
-
-### Common HTTP Status Codes
-
-| Code | Meaning |
-|------|---------|
-| 200 | OK - Request successful |
-| 201 | Created - Resource created successfully |
-| 204 | No Content - Success, no response body |
-| 400 | Bad Request - Invalid parameters or validation error |
-| 401 | Unauthorized - Missing or invalid authentication token |
-| 403 | Forbidden - Insufficient permissions |
-| 404 | Not Found - Resource doesn't exist |
-| 409 | Conflict - Duplicate entry or business rule violation |
-| 500 | Server Error - Internal server error |
-
-### Authentication Errors
-
-- **401 Unauthorized:** Missing or invalid token
-  ```json
-  {
-    "detail": "Authentication credentials were not provided."
-  }
-  ```
-
-- **403 Forbidden:** Insufficient permissions
-  ```json
-  {
-    "detail": "You do not have permission to perform this action."
-  }
-  ```
-
-### Validation Errors
-
-- **400 Bad Request:** Invalid data
-  ```json
-  {
-    "errors": {
-      "email": ["Enter a valid email address."],
-      "phone": ["Phone number must start with +880"]
+  - **Purpose:** Place a new order.
+  - **Request Body:**
+    ```json
+    {
+      "shipping_address": "123 Farm Road",
+      "notes": "Deliver in the morning",
+      "order_items": [
+        { "product": 5, "quantity": 2 },
+        { "product": 12, "quantity": 1 }
+      ]
     }
-  }
-  ```
+    ```
+  - **Response:** `201 Created` - Returns created order with `total_amount` calculated and stock decremented.
+- **PATCH** `/marketplace/orders/{id}/`
+  - **Purpose:** Update status.
+  - **Request Body:** `{ "status": "shipped" }`
+  - *Note: If a customer cancels an order (`status: "cancelled"`), stock is restored and a refund transaction is automatically generated.*
 
 ---
 
-## Pagination
+## 5. Consultations
+**Audience:** Both
 
-List endpoints return paginated responses:
+Scheduling and live sessions with agricultural experts.
 
-```json
-{
-  "count": 150,
-  "next": "/api/endpoint/?page=2",
-  "previous": null,
-  "results": [/* items */]
-}
-```
+### Typical Sequence of Calls
+1. **Staff** creates shifts using **POST** `/consultation/slots/`.
+2. **Farmer** books an available slot using **POST** `/consultation/tickets/book/`.
+3. At the scheduled time, **Expert** calls **POST** `/consultation/tickets/{id}/start_session/`.
+4. When finished, either party calls **POST** `/consultation/tickets/{id}/complete_session/`.
 
-**Query Parameters:**
-- `page`: Page number (default: 1)
-- `page_size`: Items per page (default: 20, max: 100)
-- `search`: Search term for filterable fields
-- `ordering`: Sort field (prefix with `-` for descending)
+### 5.1 Consultation Slots
+- **GET** `/consultation/slots/` - List slots. Query params: `?date=2026-05-10&available=true`
+- **POST** `/consultation/slots/` (Staff only)
+  - **Purpose:** Generate 20-minute consultation slots automatically for a specific shift.
+  - **Request Body:**
+    ```json
+    {
+      "expert": 4,
+      "date": "2026-05-15",
+      "shift": "morning"
+    }
+    ```
+- **GET** `/consultation/slots/coverage/` (Staff only) - Analytics on slot utilization and expert loads.
 
----
-
-## Searching and Filtering
-
-Most list endpoints support filtering:
-
-```
-GET /farming/lands/?search=north&area_acres__gte=5
-GET /marketplace/products/?category=seeds&price_taka__lte=1000
-GET /finance/ledger/?status=completed&date__gte=2026-04-01
-```
-
----
-
-## WebSocket Endpoints (Real-time)
-
-### Consultation Session
-- **WS:** `/ws/consultation/{ticket_id}/`
-- **Messages:** JSON-formatted chat messages between farmer and consultant
-
-### Notifications
-- **WS:** `/ws/notifications/`
-- **Messages:** Real-time notification push events
-
----
-
-## Testing Endpoints
-
-**Quick Test Flow:**
-
-```bash
-# 1. Register
-curl -X POST http://localhost:8000/api/auth/register/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "testfarmer",
-    "email": "test@example.com",
-    "password": "Test@123456",
-    "first_name": "Test",
-    "last_name": "Farmer",
-    "phone": "+8801234567890",
-    "role": "farmer"
-  }'
-
-# 2. Login
-curl -X POST http://localhost:8000/api/auth/login/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "testfarmer",
-    "password": "Test@123456"
-  }'
-
-# 3. Use access token
-curl -X GET http://localhost:8000/api/auth/profile/ \
-  -H "Authorization: Bearer {access_token}"
-```
+### 5.2 Tickets (Bookings)
+- **GET** `/consultation/tickets/` - List bookings.
+- **POST** `/consultation/tickets/book/`
+  - **Purpose:** Farmer books an available slot.
+  - **Request Body:**
+    ```json
+    {
+      "slot_id": 42,
+      "notes": "My rice plants are turning yellow."
+    }
+    ```
+- **POST** `/consultation/tickets/{id}/start_session/`
+  - **Purpose:** Expert marks session as in-progress. Sends notification to farmer.
+- **POST** `/consultation/tickets/{id}/complete_session/`
+  - **Purpose:** Close the consultation room.
+  - **Request Body (Expert):** `{ "expert_summary": "Identified nitrogen deficiency. Advised urea." }`
 
 ---
 
-**Swagger UI:** http://localhost:8000/api/docs/  
-**Schema (JSON):** http://localhost:8000/api/schema.json/
+## 6. Finance & Billing
+**Audience:** Both
 
----
+Payment processing, subscription plans, and unified financial ledger.
 
-*Last Updated: April 29, 2026*  
-*For issues or suggestions, contact: development@sofolkrishok.com*
+### 6.1 Subscription Plans
+- **GET** `/finance/plans/` - List available tier plans (Basic, Premium, Enterprise).
+- **POST/PUT/PATCH/DELETE** `/finance/plans/` (Staff only) - Manage plans.
+- **GET** `/finance/subscription/` - View the authenticated user's current active subscription.
+
+### 6.2 Checkout
+- **POST** `/finance/checkout/`
+  - **Purpose:** Initiate an external payment gateway session for an order, consultation, or subscription.
+  - **Request Body:**
+    ```json
+    {
+      "order_id": 105,
+      "description": "Payment for Order #105"
+    }
+    ```
+  - **Response:** `200 OK`
+    ```json
+    {
+      "payment_url": "https://sandbox.sslcommerz.com/...",
+      "reference_id": "TXN123456"
+    }
+    ```
+
+### 6.3 Payment IPN Callback
+- **POST** `/finance/payment/callback/`
+  - **Purpose:** Webhook endpoint for SSLCommerz/payment gateway to send asynchronous payment success/failure notifications. Updates Transaction status securely.
+
+### 6.4 Ledger / Transactions
+- **GET** `/finance/ledger/`
+  - **Purpose:** View user's financial history (debits, credits, refunds).
+  - **Response:** Paginated list of transactions including `amount`, `status`, `reference_id`, and `created_at`.
